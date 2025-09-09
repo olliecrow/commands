@@ -17,11 +17,11 @@ Scripts are made for Mac.
 
 - **Claude Code Monitor**
     - Realtime Claude Code Monitor
-    - https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor
+    - Requires: https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor
 
 - **Claude Code Usage**
     - Historical Claude Code Usage
-    - https://github.com/ryoppippi/ccusage
+    - Requires: https://github.com/ryoppippi/ccusage
 
 ## Aliases
 
