@@ -2,6 +2,8 @@
 
 Collection of useful scripts.
 
+Scripts are made for Mac.
+
 ## Script Details
 
 - **llm_copy.sh**  
