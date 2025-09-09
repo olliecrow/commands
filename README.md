@@ -1,6 +1,6 @@
-# Scripts
+# Commands
 
-Collection of useful scripts.
+Collection of useful scripts/commands.
 
 Scripts are made for Mac.
 
@@ -15,6 +15,8 @@ Scripts are made for Mac.
     - Use `llm --file .` to copy to clipboard as file.
     - Use `llm /dir_0/ /dir_1/ /dir_2/` to copy specific dirs.
 
+## External
+
 - **Claude Code Monitor**
     - Realtime Claude Code Monitor
     - Requires: https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor
@@ -23,7 +25,7 @@ Scripts are made for Mac.
     - Historical Claude Code Usage
     - Requires: https://github.com/ryoppippi/ccusage
 
-## Aliases
+## Aliases/Commands
 
 Suggest adding these as aliases (eg to `~/.bashrc`).
 
