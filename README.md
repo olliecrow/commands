@@ -20,7 +20,7 @@ Suggest adding these as aliases.
 eg to `~/.bashrc`
 
 ```
-alias llm="~/llm-convert.sh"
+alias llm="~/llm_copy.sh"
 ```
 
 Then can use:
