@@ -12,6 +12,7 @@
 #   --save_path ...         (underscore alias)
 #   --include-untracked     Include untracked files (respects .gitignore)
 #   --include_untracked     (underscore alias)
+#   --clipboard             Copy the DIFF TEXT to the clipboard (not the file)
 #
 # Notes:
 #   - Script-specific options must appear before a standalone `--` separator.
@@ -34,12 +35,11 @@ need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Required command not found:
 # validate environment
 # ---------------------------
 need_cmd git
-need_cmd osascript
 
 # ---------------------------
 # parse args
 # ---------------------------
-[[ $# -ge 1 ]] || die "usage: $(basename "$0") <repo_dir_or_subdir> [--save-path <file>] [git-diff-args...]"
+[[ $# -ge 1 ]] || die "usage: $(basename "$0") <repo_dir_or_subdir> [--save-path <file>] [--clipboard] [git-diff-args...]"
 
 REPO_PATH="$1"; shift || true
 [[ -d "$REPO_PATH" ]] || die "Not a directory: $REPO_PATH"
@@ -68,6 +68,7 @@ trap cleanup_intent EXIT
 SAVE_PATH=""
 DIFF_ARGS=()
 INCLUDE_UNTRACKED=0
+CLIPBOARD_TEXT=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --save-path|--save_path)
@@ -83,6 +84,10 @@ while [[ $# -gt 0 ]]; do
       INCLUDE_UNTRACKED=1
       shift
       ;;
+    --clipboard)
+      CLIPBOARD_TEXT=1
+      shift
+      ;;
     --)
       # pass the rest (including --) straight to git diff
       DIFF_ARGS+=("$@")
@@ -94,6 +99,13 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# Validate clipboard tooling now that we know the mode
+if [[ "$CLIPBOARD_TEXT" -eq 1 ]]; then
+  need_cmd pbcopy
+else
+  need_cmd osascript
+fi
 
 # Extract any pathspec provided to forward to ls-files when including untracked
 PATHSPEC_ARGS=()
@@ -161,7 +173,16 @@ fi
 # put the FILE on macOS clipboard
 # ---------------------------
 # Note: The file must persist until you've pasted it.
-if osascript - "$TXT_FILE" <<'APPLESCRIPT'
+if [[ "$CLIPBOARD_TEXT" -eq 1 ]]; then
+  lines=$(wc -l <"$TXT_FILE" | tr -d ' ')
+  bytes=$(wc -c <"$TXT_FILE" | tr -d ' ')
+  if cat "$TXT_FILE" | pbcopy; then
+    echo "Copied text to clipboard (${lines} lines, ${bytes} bytes)"
+  else
+    if [[ "$CLEANUP_ON_FAIL" -eq 1 ]]; then rm -f "$TXT_FILE"; fi
+    die "Failed to copy text to clipboard"
+  fi
+elif osascript - "$TXT_FILE" <<'APPLESCRIPT'
 on run argv
   set p to POSIX file (item 1 of argv)
   set the clipboard to p
