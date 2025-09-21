@@ -98,7 +98,7 @@ done
 # Extract any pathspec provided to forward to ls-files when including untracked
 PATHSPEC_ARGS=()
 sep=0
-for a in "${DIFF_ARGS[@]}"; do
+for a in ${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}; do
   if [[ $sep -eq 1 ]]; then
     PATHSPEC_ARGS+=("$a")
   elif [[ "$a" == "--" ]]; then
@@ -126,11 +126,16 @@ fi
 
 # If requested, temporarily include untracked files via intent-to-add
 if [[ "$INCLUDE_UNTRACKED" -eq 1 ]]; then
+  UNTRACKED=()
   if [[ ${#PATHSPEC_ARGS[@]} -gt 0 ]]; then
-    # Limit to provided pathspec
-    readarray -d '' -t UNTRACKED < <(git -C "$REPO_PATH" ls-files --others --exclude-standard -z -- "${PATHSPEC_ARGS[@]}") || true
+    # Limit to provided pathspec; read NUL-delimited filenames in a portable way
+    while IFS= read -r -d $'\0' f; do
+      UNTRACKED+=("$f")
+    done < <(git -C "$REPO_PATH" ls-files --others --exclude-standard -z -- "${PATHSPEC_ARGS[@]}")
   else
-    readarray -d '' -t UNTRACKED < <(git -C "$REPO_PATH" ls-files --others --exclude-standard -z) || true
+    while IFS= read -r -d $'\0' f; do
+      UNTRACKED+=("$f")
+    done < <(git -C "$REPO_PATH" ls-files --others --exclude-standard -z)
   fi
   if [[ ${#UNTRACKED[@]} -gt 0 ]]; then
     git -C "$REPO_PATH" add -N -- "${UNTRACKED[@]}"
@@ -143,7 +148,7 @@ fi
 #   --staged
 #   -- name/of/file
 #   COMMITA..COMMITB -- path/inside/repo
-("${DIFF_CMD[@]}" -C "$REPO_PATH" "${DIFF_ARGS[@]}" > "$TXT_FILE") || {
+("${DIFF_CMD[@]}" -C "$REPO_PATH" ${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"} > "$TXT_FILE") || {
   if [[ "$CLEANUP_ON_FAIL" -eq 1 ]]; then rm -f "$TXT_FILE"; fi
   die "git diff failed"
 }
