@@ -9,17 +9,28 @@ Scripts are made for Mac.
 - **llm_copy.sh**  
     - Bundles allowed file types under provided paths into a single text file with headers.
     - Default behavior places the bundled file on the macOS clipboard; use `--string` to copy raw text instead.
+    - Optional: `--save-path <file>` to save the bundle at a specific path. In file mode, that file is also placed on the clipboard; in string mode, the text is copied and written to the file.
     - Respects `.gitignore` when running inside a Git repository and skips hidden directories (eg `.git`, `.venv`).
     - Use `llm .` to copy the current directory.
     - Use `llm --string .` to copy as plain text.
+    - Use `llm . --save-path /tmp/bundle.txt` to save and also place the file on the clipboard.
+    - Use `llm --string . --save-path=/tmp/bundle.txt` to save and copy the text content.
     - Use `llm /dir_0/ /dir_1/ /dir_2/` to bundle specific directories.
 
 - **llm_git_diff.sh**  
     - Generates a Git diff (with any standard `git diff` arguments) and places the resulting file on the macOS clipboard.
     - Accepts the repo root or any subdirectory as the first argument.
     - Supports flags like `--staged`, commit ranges, and path filters.
+    - Optional: `--save-path <file>` to write the diff to a specific file (which is also placed on the clipboard).
+    - Optional: `--include-untracked` to include untracked files (respects `.gitignore`). Internally uses `git add -N` and resets on exit; if you provide a pathspec after `--`, untracked detection is limited to that path.
     - Leaves the temporary diff file on disk so you can paste it where needed.
     - Use `llm_diff .` (alias below) to capture the current repository's diff.
+    - Examples:
+        - `llm_diff . --staged`
+        - `llm_diff . --include-untracked`
+        - `llm_diff . --include-untracked -- path/inside/repo`
+        - `llm_diff . --save-path /tmp/diff.txt`
+    - Note: script-specific options (like `--save-path`, `--include-untracked`) should appear before a standalone `--` that introduces a pathspec.
 
 ## External
 

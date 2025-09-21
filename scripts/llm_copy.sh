@@ -2,6 +2,7 @@
 # Concatenate allowed files under a path and copy to clipboard.
 # Default: copy the resulting .txt FILE to the macOS clipboard.
 # Use --string to copy the plain TEXT content instead.
+# Optionally use --save-path to write the bundle to a specific file path.
 set -euo pipefail
 
 # ---------------------------
@@ -19,9 +20,13 @@ die() { echo "Error: $*" >&2; exit 1; }
 
 usage() {
   cat >&2 <<USAGE
-Usage: llm_convert.sh [--string] <path> [path ...]
+Usage: llm_convert.sh [--string] [--save-path <file>] <path> [path ...]
 
   --string   Copy the PLAIN TEXT content to the macOS clipboard (not a file).
+  --save-path <file>
+             Save the bundled output to the given path. In file mode, that
+             file is also placed on the clipboard. In string mode, the text
+             is copied to the clipboard and also written to the file.
 
 The tool gathers files with extensions: $(echo $ALLOWED_EXTENSIONS | sed 's/ /, ./g' | sed 's/^/./')
 USAGE
@@ -64,10 +69,20 @@ process_file() {
 # Parse args
 # ---------------------------
 paths=()
+SAVE_PATH=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --string)
       MODE="text"
+      shift
+      ;;
+    --save-path|--save_path)
+      [[ $# -ge 2 ]] || die "--save-path requires a file path"
+      SAVE_PATH="$2"
+      shift 2
+      ;;
+    --save-path=*|--save_path=*)
+      SAVE_PATH="${1#*=}"
       shift
       ;;
     -h|--help)
@@ -91,14 +106,26 @@ case "$MODE" in
   *) die "Invalid MODE: $MODE" ;;
 esac
 
-# Create temp file (.txt when in file mode so the paste target sees a text file)
-if [[ "$MODE" == "file" ]]; then
-  TMP_FILE="$(mktemp -t "${TMP_BASENAME}.XXXXXX").txt"
-  # Do NOT auto-delete in file mode; user needs the file to persist for paste.
+# Choose output file path.
+# In file mode, use .txt suffix for temp so paste targets see a text file.
+if [[ -n "$SAVE_PATH" ]]; then
+  save_dir="$(dirname "$SAVE_PATH")"
+  mkdir -p "$save_dir" || die "Failed to create directory: $save_dir"
+  # Normalize to absolute path
+  SAVE_PATH="$(cd "$save_dir" && pwd)/$(basename "$SAVE_PATH")"
+  TMP_FILE="$SAVE_PATH"
+  # Never auto-delete a user-specified file.
   trap ':' EXIT
 else
-  TMP_FILE="$(mktemp -t "${TMP_BASENAME}.XXXXXX")"
-  trap 'rm -f "$TMP_FILE"' EXIT
+  if [[ "$MODE" == "file" ]]; then
+    TMP_FILE="$(mktemp -t "${TMP_BASENAME}.XXXXXX").txt"
+    # Do NOT auto-delete in file mode; user needs the file to persist for paste.
+    trap ':' EXIT
+  else
+    TMP_FILE="$(mktemp -t "${TMP_BASENAME}.XXXXXX")"
+    # Auto-delete temp in text mode only when not saving to a specific path.
+    trap 'rm -f "$TMP_FILE"' EXIT
+  fi
 fi
 
 # ---------------------------
@@ -163,6 +190,9 @@ done
 if [[ -s "$TMP_FILE" ]]; then
   total_lines=$(wc -l <"$TMP_FILE")
   total_bytes=$(wc -c <"$TMP_FILE")
+  if [[ -n "$SAVE_PATH" ]]; then
+    echo "Saved bundle to: $TMP_FILE ($total_lines lines, $total_bytes bytes)"
+  fi
   if [[ "$MODE" == "text" ]]; then
     # Stream contents to clipboard
     if cat "$TMP_FILE" | pbcopy; then
@@ -182,12 +212,13 @@ APPLESCRIPT
       echo "Placed file on clipboard: $TMP_FILE ($total_lines lines, $total_bytes bytes)"
       echo "Note: keep this file until you've pasted it."
     else
-      rm -f "$TMP_FILE"
+      # Only delete the file if it was a temporary one we created.
+      if [[ -z "$SAVE_PATH" ]]; then rm -f "$TMP_FILE"; fi
       die "Failed to place file on clipboard"
     fi
   fi
 else
   # Nothing gathered
-  if [[ "$MODE" == "file" ]]; then rm -f "$TMP_FILE"; fi
+  if [[ "$MODE" == "file" && -z "$SAVE_PATH" ]]; then rm -f "$TMP_FILE"; fi
   echo "No supported files found ($(echo $ALLOWED_EXTENSIONS | sed 's/ /, ./g' | sed 's/^/./') )"
 fi
