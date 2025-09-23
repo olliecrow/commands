@@ -22,15 +22,15 @@ Scripts are made for Mac.
     - Accepts the repo root or any subdirectory as the first argument.
     - Supports flags like `--staged`, commit ranges, and path filters.
     - Optional: `--save-path <file>` to write the diff to a specific file (which is also placed on the clipboard).
-    - Optional: `--include-untracked` to include untracked files (respects `.gitignore`). Internally uses `git add -N` and resets on exit; if you provide a pathspec after `--`, untracked detection is limited to that path.
+    - Includes untracked files by default (respects `.gitignore`). Use `--exclude-untracked` to skip them; internally the script uses `git add -N` and resets on exit. If you provide a pathspec after `--`, untracked detection is limited to that path.
     - Leaves the temporary diff file on disk so you can paste it where needed.
     - Use `llm_diff .` (alias below) to capture the current repository's diff.
     - Examples:
         - `llm_diff . --staged`
-        - `llm_diff . --include-untracked`
-        - `llm_diff . --include-untracked -- path/inside/repo`
+        - `llm_diff . --exclude-untracked` (skip untracked files)
+        - `llm_diff . --exclude-untracked -- path/inside/repo`
         - `llm_diff . --save-path /tmp/diff.txt`
-    - Note: script-specific options (like `--save-path`, `--include-untracked`) should appear before a standalone `--` that introduces a pathspec.
+    - Note: script-specific options (like `--save-path`, `--exclude-untracked`) should appear before a standalone `--` that introduces a pathspec.
 
 ## External
 

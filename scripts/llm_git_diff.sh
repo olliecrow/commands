@@ -10,8 +10,8 @@
 #   --save-path <file>      Save diff to the given path
 #   --save-path=<file>      (alias form)
 #   --save_path ...         (underscore alias)
-#   --include-untracked     Include untracked files (respects .gitignore)
-#   --include_untracked     (underscore alias)
+#   --exclude-untracked     Exclude untracked files (included by default)
+#   --exclude_untracked     (underscore alias)
 #   --clipboard             Copy the DIFF TEXT to the clipboard (not the file)
 #
 # Notes:
@@ -67,7 +67,7 @@ trap cleanup_intent EXIT
 #############################
 SAVE_PATH=""
 DIFF_ARGS=()
-INCLUDE_UNTRACKED=0
+INCLUDE_UNTRACKED=1
 CLIPBOARD_TEXT=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -80,8 +80,8 @@ while [[ $# -gt 0 ]]; do
       SAVE_PATH="${1#*=}"
       shift
       ;;
-    --include-untracked|--include_untracked)
-      INCLUDE_UNTRACKED=1
+    --exclude-untracked|--exclude_untracked)
+      INCLUDE_UNTRACKED=0
       shift
       ;;
     --clipboard)
@@ -107,7 +107,7 @@ else
   need_cmd osascript
 fi
 
-# Extract any pathspec provided to forward to ls-files when including untracked
+# Extract any pathspec provided to forward to ls-files when handling untracked entries
 PATHSPEC_ARGS=()
 sep=0
 for a in ${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}; do
@@ -136,7 +136,7 @@ else
   CLEANUP_ON_FAIL=1
 fi
 
-# If requested, temporarily include untracked files via intent-to-add
+# Unless excluded, temporarily include untracked files via intent-to-add
 if [[ "$INCLUDE_UNTRACKED" -eq 1 ]]; then
   UNTRACKED=()
   if [[ ${#PATHSPEC_ARGS[@]} -gt 0 ]]; then
