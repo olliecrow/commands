@@ -59,6 +59,25 @@ is_allowed_ext() {
 
 process_file() {
   local file="$1" rel_path="$2"
+  local display_path
+  display_path="${rel_path:-$file}"
+
+  if [[ ! -e "$file" ]]; then
+    echo "Warning: '$display_path' no longer exists; skipping" >&2
+    return 0
+  fi
+
+  if [[ ! -f "$file" ]]; then
+    # Skip anything that resolved to a directory or special file.
+    echo "Warning: '$display_path' is not a regular file; skipping" >&2
+    return 0
+  fi
+
+  if [[ ! -r "$file" ]]; then
+    echo "Warning: '$display_path' is not readable; skipping" >&2
+    return 0
+  fi
+
   is_allowed_ext "$file" || return 0
   printf "%s%s\n" "$HEADER_PREFIX" "$rel_path" >>"$TMP_FILE"
   cat "$file" >>"$TMP_FILE"
