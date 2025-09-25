@@ -167,18 +167,17 @@ for TARGET_PATH in "${paths[@]}"; do
     process_file "$TARGET_PATH" "$rel"
 
   elif [[ -d "$TARGET_PATH" ]]; then
-    if has_git && is_in_git_repo "$TARGET_PATH"; then
+    TARGET_ABS="$(cd "$TARGET_PATH" && pwd)"
+    if has_git && is_in_git_repo "$TARGET_ABS"; then
       # Use git to enumerate non-ignored files under TARGET_PATH.
-      REPO_ROOT="$(git_toplevel_for "$TARGET_PATH")"
-      # List tracked + untracked but not ignored, within this sub-tree.
       while IFS= read -r -d '' git_rel; do
-        file_abs="$REPO_ROOT/$git_rel"
+        file_abs="$TARGET_ABS/$git_rel"
 
         # Mirror previous 'find -type f' behavior by skipping symlinks.
         [[ -L "$file_abs" ]] && continue
 
         # Compute path relative to the user-specified TARGET_PATH for the header and hidden-dir filter.
-        rel="${file_abs#$TARGET_PATH/}"
+        rel="$git_rel"
 
         # Preserve existing behavior: skip any path that has a hidden directory component (.^)
         if [[ "$rel" =~ (^|/)\.[^/]+ ]]; then
@@ -186,7 +185,7 @@ for TARGET_PATH in "${paths[@]}"; do
         fi
 
         process_file "$file_abs" "$rel"
-      done < <(git -C "$TARGET_PATH" ls-files -z --cached --others --exclude-standard -- . | sort -z)
+      done < <(git -C "$TARGET_ABS" ls-files -z --cached --others --exclude-standard -- . | sort -z)
     else
       # Fallback to original behavior when not in a repo or git isn't available.
       while IFS= read -r -d '' file; do
