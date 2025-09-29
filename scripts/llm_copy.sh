@@ -9,6 +9,7 @@ set -euo pipefail
 # Constants / configuration
 # ---------------------------
 readonly ALLOWED_EXTENSIONS="txt md py json jsonl yaml yml js html sh rs toml cfg css ini env rst c cc cpp h hpp cuh cu ts tsx jsx java rb go bat ps1 fish make cmake gradle"
+readonly ALLOWED_FILENAMES="Dockerfile Containerfile Imagefile Makefile Procfile Rakefile Gemfile Pipfile Brewfile Jenkinsfile Vagrantfile LICENSE COPYING NOTICE README CHANGES CHANGELOG VERSION ENV"
 readonly HEADER_PREFIX="# File: "
 readonly TMP_BASENAME="llm_bundle"
 MODE="file"  # "file" (default) | "text"
@@ -19,6 +20,13 @@ MODE="file"  # "file" (default) | "text"
 die() { echo "Error: $*" >&2; exit 1; }
 
 usage() {
+  local ext_list name_list
+  name_list=""
+  ext_list="$(echo "$ALLOWED_EXTENSIONS" | sed 's/ /, ./g' | sed 's/^/./')"
+  if [[ -n "$ALLOWED_FILENAMES" ]]; then
+    name_list="$(echo "$ALLOWED_FILENAMES" | tr ' ' ', ')"
+  fi
+
   cat >&2 <<USAGE
 Usage: llm_convert.sh [--string] [--save-path <file>] <path> [path ...]
 
@@ -28,7 +36,7 @@ Usage: llm_convert.sh [--string] [--save-path <file>] <path> [path ...]
              file is also placed on the clipboard. In string mode, the text
              is copied to the clipboard and also written to the file.
 
-The tool gathers files with extensions: $(echo $ALLOWED_EXTENSIONS | sed 's/ /, ./g' | sed 's/^/./')
+The tool gathers files with extensions: $ext_list${name_list:+ and filenames: $name_list}
 USAGE
   exit 1
 }
@@ -51,10 +59,16 @@ git_toplevel_for() {
   git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true
 }
 
-is_allowed_ext() {
-  local file="$1" ext
-  ext="${file##*.}"
-  [[ "$file" != "$ext" ]] && echo "$ALLOWED_EXTENSIONS" | grep -qw "$ext"
+is_allowed_file() {
+  local file="$1" base ext
+  base="${file##*/}"
+  ext="${base##*.}"
+
+  if [[ "$base" == "$ext" ]]; then
+    [[ -n "$ALLOWED_FILENAMES" ]] && echo "$ALLOWED_FILENAMES" | tr ' ' '\n' | grep -Fxq "$base"
+  else
+    echo "$ALLOWED_EXTENSIONS" | grep -qw "$ext"
+  fi
 }
 
 process_file() {
@@ -78,7 +92,7 @@ process_file() {
     return 0
   fi
 
-  is_allowed_ext "$file" || return 0
+  is_allowed_file "$file" || return 0
   printf "%s%s\n" "$HEADER_PREFIX" "$rel_path" >>"$TMP_FILE"
   cat "$file" >>"$TMP_FILE"
   printf "\n" >>"$TMP_FILE"
@@ -238,5 +252,11 @@ APPLESCRIPT
 else
   # Nothing gathered
   if [[ "$MODE" == "file" && -z "$SAVE_PATH" ]]; then rm -f "$TMP_FILE"; fi
-  echo "No supported files found ($(echo $ALLOWED_EXTENSIONS | sed 's/ /, ./g' | sed 's/^/./') )"
+  ext_list="$(echo "$ALLOWED_EXTENSIONS" | sed 's/ /, ./g' | sed 's/^/./')"
+  if [[ -n "$ALLOWED_FILENAMES" ]]; then
+    name_list=" and filenames: $(echo "$ALLOWED_FILENAMES" | tr ' ' ', ')"
+  else
+    name_list=""
+  fi
+  echo "No supported files found ($ext_list$name_list)"
 fi
