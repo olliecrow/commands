@@ -12,7 +12,7 @@
 #   --save_path ...         (underscore alias)
 #   --exclude-untracked     Exclude untracked files (included by default)
 #   --exclude_untracked     (underscore alias)
-#   --clipboard             Copy the DIFF TEXT to the clipboard (not the file)
+#   --string                Copy the DIFF TEXT to the clipboard (not the file)
 #
 # Notes:
 #   - Script-specific options must appear before a standalone `--` separator.
@@ -39,7 +39,7 @@ need_cmd git
 # ---------------------------
 # parse args
 # ---------------------------
-[[ $# -ge 1 ]] || die "usage: $(basename "$0") <repo_dir_or_subdir> [--save-path <file>] [--clipboard] [git-diff-args...]"
+[[ $# -ge 1 ]] || die "usage: $(basename "$0") <repo_dir_or_subdir> [--save-path <file>] [--string] [git-diff-args...]"
 
 REPO_PATH="$1"; shift || true
 [[ -d "$REPO_PATH" ]] || die "Not a directory: $REPO_PATH"
@@ -84,7 +84,7 @@ while [[ $# -gt 0 ]]; do
       INCLUDE_UNTRACKED=0
       shift
       ;;
-    --clipboard)
+    --string)
       CLIPBOARD_TEXT=1
       shift
       ;;

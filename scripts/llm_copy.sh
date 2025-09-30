@@ -28,7 +28,7 @@ usage() {
   fi
 
   cat >&2 <<USAGE
-Usage: llm_convert.sh [--string] [--save-path <file>] <path> [path ...]
+Usage: llm_copy.sh [--string] [--save-path <file>] <path> [path ...]
 
   --string   Copy the PLAIN TEXT content to the macOS clipboard (not a file).
   --save-path <file>
