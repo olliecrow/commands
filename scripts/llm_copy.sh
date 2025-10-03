@@ -13,6 +13,7 @@ readonly ALLOWED_FILENAMES="Dockerfile Containerfile Imagefile Makefile Procfile
 readonly HEADER_PREFIX="# File: "
 readonly TMP_BASENAME="llm_bundle"
 MODE="file"  # "file" (default) | "text"
+IGNORE_GITIGNORE="false"
 
 # ---------------------------
 # Helpers
@@ -35,6 +36,8 @@ Usage: llm_copy.sh [--string] [--save-path <file>] <path> [path ...]
              Save the bundled output to the given path. In file mode, that
              file is also placed on the clipboard. In string mode, the text
              is copied to the clipboard and also written to the file.
+  --ignore_gitignore
+             Ignore .gitignore filtering when gathering files.
 
 The tool gathers files with extensions: $ext_list${name_list:+ and filenames: $name_list}
 USAGE
@@ -118,6 +121,10 @@ while [[ $# -gt 0 ]]; do
       SAVE_PATH="${1#*=}"
       shift
       ;;
+    --ignore_gitignore)
+      IGNORE_GITIGNORE="true"
+      shift
+      ;;
     -h|--help)
       usage
       ;;
@@ -169,8 +176,8 @@ for TARGET_PATH in "${paths[@]}"; do
     ROOT="$(dirname "$TARGET_PATH")"
     base="$(basename "$TARGET_PATH")"
 
-    # If in a git repo, skip file when .gitignore says to ignore it.
-    if has_git && is_in_git_repo "$ROOT"; then
+    # If respecting .gitignore (default), skip files ignored by git.
+    if [[ "$IGNORE_GITIGNORE" != "true" ]] && has_git && is_in_git_repo "$ROOT"; then
       if git -C "$ROOT" check-ignore -q -- "$base"; then
         # Ignored by git; skip.
         continue
@@ -182,8 +189,8 @@ for TARGET_PATH in "${paths[@]}"; do
 
   elif [[ -d "$TARGET_PATH" ]]; then
     TARGET_ABS="$(cd "$TARGET_PATH" && pwd)"
-    if has_git && is_in_git_repo "$TARGET_ABS"; then
-      # Use git to enumerate non-ignored files under TARGET_PATH.
+    if [[ "$IGNORE_GITIGNORE" != "true" ]] && has_git && is_in_git_repo "$TARGET_ABS"; then
+      # Use git to enumerate only files that aren't ignored.
       while IFS= read -r -d '' git_rel; do
         file_abs="$TARGET_ABS/$git_rel"
 
