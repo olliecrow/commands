@@ -10,7 +10,7 @@ Scripts are made for Mac.
     - Bundles allowed file types under provided paths into a single text file with headers.
     - Default behavior places the bundled file on the macOS clipboard; use `--string` to copy raw text instead.
     - Optional: `--save-path <file>` to save the bundle at a specific path. In file mode, that file is also placed on the clipboard; in string mode, the text is copied and written to the file.
-    - Respects `.gitignore` when running inside a Git repository and skips hidden directories (eg `.git`, `.venv`). Pass `--ignore_gitignore` to include ignored files when needed.
+    - Respects `.gitignore` when running inside a Git repository and skips hidden directories (eg `.git`, `.venv`). Pass `--ignore_gitignore` (or `--ignore-gitignore`) to include ignored files when needed.
     - Use `llm .` to copy the current directory.
     - Use `llm --string .` to copy as plain text.
     - Use `llm . --save-path /tmp/bundle.txt` to save and also place the file on the clipboard.

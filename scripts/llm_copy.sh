@@ -36,7 +36,7 @@ Usage: llm_copy.sh [--string] [--save-path <file>] <path> [path ...]
              Save the bundled output to the given path. In file mode, that
              file is also placed on the clipboard. In string mode, the text
              is copied to the clipboard and also written to the file.
-  --ignore_gitignore
+  --ignore_gitignore (alias: --ignore-gitignore)
              Ignore .gitignore filtering when gathering files.
 
 The tool gathers files with extensions: $ext_list${name_list:+ and filenames: $name_list}
@@ -121,7 +121,7 @@ while [[ $# -gt 0 ]]; do
       SAVE_PATH="${1#*=}"
       shift
       ;;
-    --ignore_gitignore)
+    --ignore_gitignore|--ignore-gitignore)
       IGNORE_GITIGNORE="true"
       shift
       ;;
