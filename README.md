@@ -33,8 +33,8 @@ Scripts are made for Mac.
     - Note: script-specific options (like `--save-path`, `--exclude-untracked`) should appear before a standalone `--` that introduces a pathspec.
 
 - **multitail.sh**  
-    - Watches a directory for `.log` files and starts a `tail -n0 -F` session for each one.
-    - Polls every second so new log files are tailed automatically without restarting the command.
+    - Watches every regular file in a directory and starts a `tail -n0 -F` session for each one.
+    - Polls every second so new files are tailed automatically without restarting the command.
     - Ensures only one tail process runs per file and cleans them up when you exit.
     - Usage: `multitail <directory>` (directory argument required)
     - Example: `multitail /var/log/my-service`

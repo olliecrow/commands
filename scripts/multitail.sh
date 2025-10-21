@@ -1,5 +1,5 @@
 #!/bin/bash
-# Follow every .log file inside a directory, spawning tail sessions as needed.
+# Follow every regular file inside a directory, spawning tail sessions as needed.
 
 set -euo pipefail
 
@@ -18,8 +18,8 @@ usage() {
   cat <<'USAGE'
 Usage: multitail <directory>
 
-Continuously tails every .log file within the required directory argument. New
-log files are picked up automatically. Use -h/--help to show this message.
+Continuously tails every regular file within the required directory argument.
+New files are picked up automatically. Use -h/--help to show this message.
 USAGE
 }
 
@@ -65,11 +65,12 @@ main() {
   trap cleanup EXIT
   trap 'cleanup; exit 130' INT TERM
 
-  shopt -s nullglob
-  echo "Watching $log_dir for *.log files (Ctrl+C to stop)"
+  shopt -s nullglob dotglob
+  echo "Watching files in $log_dir (Ctrl+C to stop)"
 
   while :; do
-    for file in "$log_dir"/*.log; do
+    for file in "$log_dir"/*; do
+      [[ -f "$file" ]] || continue
       local pattern
       pattern="tail -n0 -F $(escape_pattern "$file")"
       if ! pgrep -f "$pattern" >/dev/null 2>&1; then
