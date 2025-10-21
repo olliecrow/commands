@@ -32,6 +32,15 @@ Scripts are made for Mac.
         - `llm_diff . --save-path /tmp/diff.txt`
     - Note: script-specific options (like `--save-path`, `--exclude-untracked`) should appear before a standalone `--` that introduces a pathspec.
 
+- **multitail.sh**  
+    - Watches a directory for `.log` files and starts a `tail -n0 -F` session for each one.
+    - Polls every second so new log files are tailed automatically without restarting the command.
+    - Ensures only one tail process runs per file and cleans them up when you exit.
+    - Usage: `multitail <directory>` (directory argument required)
+    - Example: `multitail /var/log/my-service`
+    - Help: `multitail -h`
+    - Requires: `tail`, `pgrep`, `pkill`
+
 ## External
 
 - **Claude Code Monitor**
@@ -49,6 +58,7 @@ Suggest adding these as aliases (eg to `~/.bashrc`).
 ```
 alias llm="~/llm_copy.sh"
 alias llm_diff="~/llm_git_diff.sh"
+alias multitail="~/multitail.sh"
 alias ccm="claude-monitor"
 alias ccu="npx --yes ccusage@latest"
 ```
