@@ -32,6 +32,14 @@ Scripts are made for Mac.
         - `llm_diff . --save-path /tmp/diff.txt`
     - Note: script-specific options (like `--save-path`, `--exclude-untracked`) should appear before a standalone `--` that introduces a pathspec.
 
+- **clear_notebook_outputs.sh**  
+    - Recursively clears all cell outputs from Jupyter notebooks under the provided path(s) without altering code or markdown cells.
+    - Accepts directories or individual notebook files and skips `.ipynb_checkpoints` directories.
+    - Requires: `python3`
+    - Examples:
+        - `clear_notebook_outputs.sh notebooks/`
+        - `clear_notebook_outputs.sh notebook.ipynb another_dir/`
+
 - **multitail.sh**  
     - Watches every regular file in a directory and starts a `tail -n0 -F` session for each one.
     - Polls every second so new files are tailed automatically without restarting the command.
@@ -58,6 +66,7 @@ Suggest adding these as aliases (eg to `~/.bashrc`).
 ```
 alias llm="~/llm_copy.sh"
 alias llm_diff="~/llm_git_diff.sh"
+alias clear_notebook_outputs="~/clear_notebook_outputs.sh"
 alias multitail="~/multitail.sh"
 alias ccm="claude-monitor"
 alias ccu="npx --yes ccusage@latest"
