@@ -33,11 +33,8 @@ Scripts are made for Mac.
     - Note: script-specific options (like `--save-path`, `--exclude-untracked`) should appear before a standalone `--` that introduces a pathspec.
 
 - **git_commit_separate.sh**  
-    - Creates one commit per changed item (tracked + untracked, including deletions).
-    - Unstages current changes first (does not discard work) when `HEAD` exists.
-    - Handles renames/copies as a single commit by staging old+new together.
-    - Expands untracked directories to individual files (`-uall`).
-    - Skips empty commits and uses the message `Updated: <path>.`
+    - One-file-per-commit for tracked/untracked changes (including deletions).
+    - Handles renames/copies, expands untracked dirs, skips empty commits.
     - Usage: `git_commit_separate.sh` (run inside a Git repo)
 
 - **clear_notebook_outputs.sh**  
