@@ -2,11 +2,10 @@
 set -euo pipefail
 
 # One-file-per-commit script.
-# - Unstages anything currently staged (does NOT discard changes)
-# - Commits each changed item one-by-one (tracked + untracked, including deletions)
-# - Supports renames/copies from porcelain -z output (stages old+new together)
-# - Uses -uall so untracked directories are expanded to individual files
-# - Skips empty commits
+# - Unstages current staging (no changes discarded)
+# - Commits each changed item (tracked/untracked, including deletions)
+# - Handles renames/copies as a single commit
+# - Expands untracked dirs and skips empty commits
 # - Message: "Updated: {filename}."
 
 # Ensure we're in a git repo
