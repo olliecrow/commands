@@ -38,7 +38,7 @@ Scripts are made for Mac.
     - Usage: `git_commit_separate.sh` (run inside a Git repo)
 
 - **git_clean_branches.sh**  
-    - Prunes remote-tracking refs and deletes local branches merged into the default branch (origin/HEAD, init.defaultBranch, or main/master), skipping anything not merged into the default remote when available.
+    - Prunes remote-tracking refs and deletes local branches merged into the default branch (origin/HEAD, init.defaultBranch, or main/master), skipping current/worktree branches and anything not merged into the default remote when available.
     - Usage: `git_clean_branches.sh` (run inside a Git repo)
 
 - **clear_notebook_outputs.sh**  
