@@ -32,6 +32,14 @@ Scripts are made for Mac.
         - `llm_diff . --save-path /tmp/diff.txt`
     - Note: script-specific options (like `--save-path`, `--exclude-untracked`) should appear before a standalone `--` that introduces a pathspec.
 
+- **git_commit_separate.sh**  
+    - Creates one commit per changed item (tracked + untracked, including deletions).
+    - Unstages current changes first (does not discard work) when `HEAD` exists.
+    - Handles renames/copies as a single commit by staging old+new together.
+    - Expands untracked directories to individual files (`-uall`).
+    - Skips empty commits and uses the message `Updated: <path>.`
+    - Usage: `git_commit_separate.sh` (run inside a Git repo)
+
 - **clear_notebook_outputs.sh**  
     - Recursively clears all cell outputs from Jupyter notebooks under the provided path(s) without altering code or markdown cells.
     - Accepts directories or individual notebook files and skips `.ipynb_checkpoints` directories.
