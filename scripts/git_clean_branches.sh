@@ -18,11 +18,15 @@ if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
 fi
 
 remotes="$(git remote)"
+has_remotes=0
+if [[ -n "$remotes" ]]; then
+  has_remotes=1
+fi
 
 # Prune remotes if any exist
-if [[ -n "$remotes" ]]; then
+if [[ "$has_remotes" -eq 1 ]]; then
   if ! git fetch --prune --all; then
-    echo "Warning: failed to fetch remotes; using local refs only." >&2
+    die "Failed to fetch remotes; aborting to avoid deleting with stale refs"
   fi
 fi
 
@@ -105,8 +109,35 @@ if [[ ${#merged[@]} -eq 0 ]]; then
   exit 0
 fi
 
+to_delete=()
+skipped=0
 for b in "${merged[@]}"; do
-  git branch -D "$b"
+  if [[ "$has_remotes" -eq 1 ]]; then
+    contains_remote="$(git branch -r --contains "$b" 2>/dev/null || true)"
+    if [[ -z "$contains_remote" ]]; then
+      echo "Skipping $b (not contained in any remote branch)." >&2
+      skipped=1
+      continue
+    fi
+  fi
+  to_delete+=("$b")
 done
+
+if [[ ${#to_delete[@]} -eq 0 ]]; then
+  echo "No branches eligible for deletion."
+  exit 0
+fi
+
+for b in "${to_delete[@]}"; do
+  if ! git branch -d "$b"; then
+    echo "Skipping $b (not fully merged or in use)." >&2
+    skipped=1
+  fi
+done
+
+if [[ "$skipped" -eq 1 ]]; then
+  echo "Done (some branches were skipped)." >&2
+  exit 0
+fi
 
 echo "Done."
