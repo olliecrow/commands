@@ -12,48 +12,78 @@ fi
 # Ensure we're in a git repo
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "Not a git repository"
 
-# Prune remotes if any exist
-if [[ -n "$(git remote)" ]]; then
-  git fetch --prune --all
+if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
+  echo "No commits yet; nothing to clean."
+  exit 0
 fi
 
-# Determine default branch (prefer remote HEAD, else main/master)
+remotes="$(git remote)"
+
+# Prune remotes if any exist
+if [[ -n "$remotes" ]]; then
+  if ! git fetch --prune --all; then
+    echo "Warning: failed to fetch remotes; using local refs only." >&2
+  fi
+fi
+
+# Determine default branch (prefer remote HEAD, else init.defaultBranch, else main/master)
 base_name=""
 base_ref=""
 default_remote=""
 
-if git remote | grep -qx 'origin'; then
+if printf '%s\n' "$remotes" | grep -qx 'origin'; then
   default_remote="origin"
 else
-  default_remote="$(git remote | head -n1 || true)"
+  default_remote="$(printf '%s\n' "$remotes" | head -n1 || true)"
 fi
+
+resolve_ref() {
+  local name="$1"
+  if git show-ref --verify --quiet "refs/heads/$name"; then
+    base_name="$name"
+    base_ref="$name"
+    return 0
+  fi
+  if [[ -n "$default_remote" ]] && git show-ref --verify --quiet "refs/remotes/$default_remote/$name"; then
+    base_name="$name"
+    base_ref="$default_remote/$name"
+    return 0
+  fi
+  return 1
+}
 
 if [[ -n "$default_remote" ]]; then
   if remote_head=$(git symbolic-ref -q "refs/remotes/$default_remote/HEAD" 2>/dev/null); then
-    base_name="${remote_head#refs/remotes/$default_remote/}"
-    if git show-ref --verify --quiet "refs/heads/$base_name"; then
-      base_ref="$base_name"
-    elif git show-ref --verify --quiet "refs/remotes/$default_remote/$base_name"; then
-      base_ref="$default_remote/$base_name"
-    fi
+    resolve_ref "${remote_head#refs/remotes/$default_remote/}" || true
   fi
 fi
 
 if [[ -z "$base_ref" ]]; then
-  if git show-ref --verify --quiet refs/heads/main; then
-    base_name="main"
-    base_ref="main"
-  elif git show-ref --verify --quiet refs/heads/master; then
-    base_name="master"
-    base_ref="master"
+  default_branch="$(git config --get init.defaultBranch || true)"
+  if [[ -n "$default_branch" ]]; then
+    resolve_ref "$default_branch" || true
   fi
 fi
 
 if [[ -z "$base_ref" ]]; then
-  die "Could not determine default branch (origin/HEAD, main, or master)"
+  for candidate in main master; do
+    resolve_ref "$candidate" && break
+  done
 fi
 
-current="$(git branch --show-current || true)"
+if [[ -z "$base_ref" ]]; then
+  die "Could not determine default branch (origin/HEAD, init.defaultBranch, main, or master)"
+fi
+
+current="$(git branch --show-current 2>/dev/null || git symbolic-ref -q --short HEAD 2>/dev/null || true)"
+in_use_list=""
+while IFS= read -r line; do
+  case "$line" in
+    branch\ refs/heads/*)
+      in_use_list+="${line#branch refs/heads/}"$'\n'
+      ;;
+  esac
+done < <(git worktree list --porcelain 2>/dev/null || true)
 
 merged=()
 while IFS= read -r b; do
@@ -62,6 +92,9 @@ while IFS= read -r b; do
     continue
   fi
   if [[ -n "$current" && "$b" == "$current" ]]; then
+    continue
+  fi
+  if [[ -n "$in_use_list" ]] && printf '%s' "$in_use_list" | grep -Fxq -- "$b"; then
     continue
   fi
   merged+=("$b")
