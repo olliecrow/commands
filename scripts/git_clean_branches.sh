@@ -33,6 +33,7 @@ fi
 # Determine default branch (prefer remote HEAD, else init.defaultBranch, else main/master)
 base_name=""
 base_ref=""
+base_ref_is_remote=0
 default_remote=""
 
 if printf '%s\n' "$remotes" | grep -qx 'origin'; then
@@ -43,14 +44,23 @@ fi
 
 resolve_ref() {
   local name="$1"
+  local prefer_remote="${2:-0}"
+  if [[ "$prefer_remote" -eq 1 && -n "$default_remote" ]] && git show-ref --verify --quiet "refs/remotes/$default_remote/$name"; then
+    base_name="$name"
+    base_ref="$default_remote/$name"
+    base_ref_is_remote=1
+    return 0
+  fi
   if git show-ref --verify --quiet "refs/heads/$name"; then
     base_name="$name"
     base_ref="$name"
+    base_ref_is_remote=0
     return 0
   fi
   if [[ -n "$default_remote" ]] && git show-ref --verify --quiet "refs/remotes/$default_remote/$name"; then
     base_name="$name"
     base_ref="$default_remote/$name"
+    base_ref_is_remote=1
     return 0
   fi
   return 1
@@ -58,20 +68,20 @@ resolve_ref() {
 
 if [[ -n "$default_remote" ]]; then
   if remote_head=$(git symbolic-ref -q "refs/remotes/$default_remote/HEAD" 2>/dev/null); then
-    resolve_ref "${remote_head#refs/remotes/$default_remote/}" || true
+    resolve_ref "${remote_head#refs/remotes/$default_remote/}" "$has_remotes" || true
   fi
 fi
 
 if [[ -z "$base_ref" ]]; then
   default_branch="$(git config --get init.defaultBranch || true)"
   if [[ -n "$default_branch" ]]; then
-    resolve_ref "$default_branch" || true
+    resolve_ref "$default_branch" "$has_remotes" || true
   fi
 fi
 
 if [[ -z "$base_ref" ]]; then
   for candidate in main master; do
-    resolve_ref "$candidate" && break
+    resolve_ref "$candidate" "$has_remotes" && break
   done
 fi
 
@@ -109,15 +119,36 @@ if [[ ${#merged[@]} -eq 0 ]]; then
   exit 0
 fi
 
+remote_default_ref=""
+if [[ "$has_remotes" -eq 1 && -n "$default_remote" && -n "$base_name" ]]; then
+  if git show-ref --verify --quiet "refs/remotes/$default_remote/$base_name"; then
+    remote_default_ref="$default_remote/$base_name"
+  fi
+fi
+
 to_delete=()
 skipped=0
 for b in "${merged[@]}"; do
+  tip="$(git rev-parse --verify "refs/heads/$b" 2>/dev/null || true)"
+  if [[ -z "$tip" ]]; then
+    echo "Skipping $b (failed to resolve branch tip)." >&2
+    skipped=1
+    continue
+  fi
   if [[ "$has_remotes" -eq 1 ]]; then
-    contains_remote="$(git branch -r --contains "$b" 2>/dev/null || true)"
-    if [[ -z "$contains_remote" ]]; then
-      echo "Skipping $b (not contained in any remote branch)." >&2
-      skipped=1
-      continue
+    if [[ -n "$remote_default_ref" ]]; then
+      if ! git merge-base --is-ancestor "$tip" "$remote_default_ref" 2>/dev/null; then
+        echo "Skipping $b (not merged into $remote_default_ref)." >&2
+        skipped=1
+        continue
+      fi
+    else
+      contains_remote="$(git branch -r --contains "$tip" 2>/dev/null || true)"
+      if [[ -z "$contains_remote" ]]; then
+        echo "Skipping $b (not contained in any remote branch)." >&2
+        skipped=1
+        continue
+      fi
     fi
   fi
   to_delete+=("$b")
@@ -129,7 +160,7 @@ if [[ ${#to_delete[@]} -eq 0 ]]; then
 fi
 
 for b in "${to_delete[@]}"; do
-  if ! git branch -d "$b"; then
+  if ! git branch -d -- "$b"; then
     echo "Skipping $b (not fully merged or in use)." >&2
     skipped=1
   fi
