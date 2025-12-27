@@ -37,6 +37,10 @@ Scripts are made for Mac.
     - Handles renames/copies, expands untracked dirs, skips empty commits.
     - Usage: `git_commit_separate.sh` (run inside a Git repo)
 
+- **git_clean_branches.sh**  
+    - Prunes remote-tracking refs and deletes local branches merged into the default branch.
+    - Usage: `git_clean_branches.sh` (run inside a Git repo)
+
 - **clear_notebook_outputs.sh**  
     - Recursively clears all cell outputs from Jupyter notebooks under the provided path(s) without altering code or markdown cells.
     - Accepts directories or individual notebook files and skips `.ipynb_checkpoints` directories.
