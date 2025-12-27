@@ -11,7 +11,9 @@ set -euo pipefail
 git rev-parse --is-inside-work-tree >/dev/null
 
 # Unstage everything currently staged, keep working tree intact
-git reset
+if git rev-parse --verify HEAD >/dev/null 2>&1; then
+  git reset
+fi
 
 # Read NUL-delimited porcelain records safely (handles spaces/newlines in filenames)
 while IFS= read -r -d '' rec; do
@@ -21,14 +23,19 @@ while IFS= read -r -d '' rec; do
   # Skip submodules (optional safeguard); remove this if you want them included
   # if [[ "$code" == "SM" ]]; then continue; fi
 
-  if [[ "$code" == R* || "$code" == C* ]]; then
-    # Rename/Copy line looks like: "old -> new"
-    old="${rest%% -> *}"
-    new="${rest##* -> }"
+  if [[ "$code" == *R* || "$code" == *C* ]]; then
+    # Rename/Copy lines include two NUL-terminated paths under -z.
+    old="$rest"
+    if ! IFS= read -r -d '' new; then
+      echo "Error: expected rename/copy destination for '$old'." >&2
+      exit 1
+    fi
 
     # Stage both sides so the rename is captured in a single commit
     git add -A -- "$old" "$new"
-    git commit -m "Updated: $new."
+    if ! git diff --cached --quiet; then
+      git commit -m "Updated: $new."
+    fi
   else
     p="$rest"
 
@@ -40,8 +47,10 @@ while IFS= read -r -d '' rec; do
       git add -- "$p"
     fi
 
-    git commit -m "Updated: $p."
+    if ! git diff --cached --quiet; then
+      git commit -m "Updated: $p."
+    fi
   fi
-done < <(git status --porcelain -z)
+done < <(git status --porcelain -z -uall)
 
 echo "Done."
