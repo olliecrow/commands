@@ -27,7 +27,9 @@ Thumbs.db
 # Environment files
 .env
 .env.local
+.env.*
 .env.*.local
+!.env.example
 
 # Debug logs
 *.log
@@ -51,6 +53,9 @@ Desktop.ini
 # Chrome extension specific
 *.crx
 *.pem
+*.key
+*.p12
+*.pfx
 key.pem
 
 # Claude Code agent files
