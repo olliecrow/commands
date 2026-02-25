@@ -113,3 +113,4 @@ Tail all regular files in a directory and automatically include newly created fi
 
 - `README.md`: repository overview and usage examples
 - `scripts/`: source of truth for command behavior
+- `docs/project-preferences.md`: durable project maintenance preferences
