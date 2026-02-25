@@ -27,5 +27,5 @@ These preferences define how `commands` should be maintained as an open-source-r
 
 ## Collaboration Preferences
 
-- Keep commit attribution to `olliecrow <me@olliecrow.io>`.
+- Preserve accurate author/committer attribution for each contributor.
 - Avoid destructive history rewrites unless required for secret/confidentiality remediation.
