@@ -1,90 +1,115 @@
-# Commands
+# commands
 
-Collection of useful scripts/commands.
+`commands` is a macOS-first toolbox of small shell utilities for day-to-day developer workflows.
 
-Scripts are made for Mac.
+## Project Aim
 
-## Script Details
+Keep frequently reused terminal tasks in one place as auditable scripts that are easy to run, copy, and modify.
 
-- **llm_copy.sh**  
-    - Bundles allowed file types under provided paths into a single text file with headers.
-    - Default behavior places the bundled file on the macOS clipboard; use `--string` to copy raw text instead.
-    - Optional: `--save-path <file>` to save the bundle at a specific path. In file mode, that file is also placed on the clipboard; in string mode, the text is copied and written to the file.
-    - Respects `.gitignore` when running inside a Git repository and skips hidden directories (eg `.git`, `.venv`). Pass `--ignore_gitignore` (or `--ignore-gitignore`) to include ignored files when needed.
-    - Use `llm .` to copy the current directory.
-    - Use `llm --string .` to copy as plain text.
-    - Use `llm . --save-path /tmp/bundle.txt` to save and also place the file on the clipboard.
-    - Use `llm --string . --save-path=/tmp/bundle.txt` to save and copy the text content.
-    - Use `llm /dir_0/ /dir_1/ /dir_2/` to bundle specific directories.
+## What This Repository Does
 
-- **llm_git_diff.sh**  
-    - Generates a Git diff (with any standard `git diff` arguments) and places the resulting file on the macOS clipboard.
-    - Accepts the repo root or any subdirectory as the first argument.
-    - Supports flags like `--staged`, commit ranges, and path filters.
-    - Optional: `--save-path <file>` to write the diff to a specific file (which is also placed on the clipboard).
-    - Includes untracked files by default (respects `.gitignore`). Use `--exclude-untracked` to skip them; internally the script uses `git add -N` and resets on exit. If you provide a pathspec after `--`, untracked detection is limited to that path.
-    - Leaves the temporary diff file on disk so you can paste it where needed.
-    - Use `llm_diff .` (alias below) to capture the current repository's diff.
-    - Examples:
-        - `llm_diff . --staged`
-        - `llm_diff . --exclude-untracked` (skip untracked files)
-        - `llm_diff . --exclude-untracked -- path/inside/repo`
-        - `llm_diff . --save-path /tmp/diff.txt`
-    - Note: script-specific options (like `--save-path`, `--exclude-untracked`) should appear before a standalone `--` that introduces a pathspec.
+- packages practical utility scripts under `scripts/`
+- focuses on repo-centric workflows (diff sharing, commit hygiene, branch cleanup)
+- includes notebook and log helpers for recurring local operations
 
-- **git_commit_separate.sh**  
-    - One-file-per-commit for tracked/untracked changes (including deletions).
-    - Handles renames/copies, expands untracked dirs, skips empty commits.
-    - Usage: `git_commit_separate.sh` (run inside a Git repo)
+## Requirements
 
-- **git_clean_branches.sh**  
-    - Prunes remote-tracking refs and deletes local branches merged into the default branch (origin/HEAD, init.defaultBranch, or main/master), skipping current/worktree branches and anything not merged into the default remote when available.
-    - Usage: `git_clean_branches.sh` (run inside a Git repo)
+- macOS
+- `bash`
+- `git`
+- `python3` (for notebook helper)
+- macOS clipboard tools: `pbcopy`, `osascript`
+- optional for `multitail.sh`: `pgrep`, `pkill`
 
-- **clear_notebook_outputs.sh**  
-    - Recursively clears all cell outputs from Jupyter notebooks under the provided path(s) without altering code or markdown cells.
-    - Accepts directories or individual notebook files and skips `.ipynb_checkpoints` directories.
-    - Requires: `python3`
-    - Examples:
-        - `clear_notebook_outputs.sh notebooks/`
-        - `clear_notebook_outputs.sh notebook.ipynb another_dir/`
+## Quick Start
 
-- **multitail.sh**  
-    - Watches every regular file in a directory and starts a `tail -n0 -F` session for each one.
-    - Polls every second so new files are tailed automatically without restarting the command.
-    - Ensures only one tail process runs per file and cleans them up when you exit.
-    - Usage: `multitail <directory>` (directory argument required)
-    - Example: `multitail /var/log/my-service`
-    - Help: `multitail -h`
-    - Requires: `tail`, `pgrep`, `pkill`
+1. Make scripts executable (if needed):
 
-## External
-
-- **Claude Code Monitor**
-    - Realtime Claude Code Monitor
-    - Requires: https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor
-
-- **Claude Code Usage**
-    - Historical Claude Code Usage
-    - Requires: https://github.com/ryoppippi/ccusage
-
-## Aliases/Commands
-
-Suggest adding these as aliases (eg to `~/.bashrc`).
-
+```bash
+chmod +x scripts/*.sh
 ```
-alias llm="~/llm_copy.sh"
-alias llm_diff="~/llm_git_diff.sh"
-alias clear_notebook_outputs="~/clear_notebook_outputs.sh"
-alias multitail="~/multitail.sh"
+
+2. Run scripts directly:
+
+```bash
+./scripts/llm_copy.sh .
+./scripts/llm_git_diff.sh . --staged
+```
+
+3. Optional: create aliases in your shell profile:
+
+```bash
+alias llm="$HOME/llm_copy.sh"
+alias llm_diff="$HOME/llm_git_diff.sh"
+alias clear_notebook_outputs="$HOME/clear_notebook_outputs.sh"
+alias multitail="$HOME/multitail.sh"
 alias ccm="claude-monitor"
 alias ccu="npx --yes ccusage@latest"
 ```
 
-Then can use:
+## Script Reference
 
+### `llm_copy.sh`
+
+Bundle allowed files into one text artifact for sharing with LLM tools.
+
+- default mode copies a file reference to clipboard
+- `--string` copies raw text content
+- `--save-path` writes to an explicit output path
+- respects `.gitignore` by default
+
+Examples:
+
+```bash
+./scripts/llm_copy.sh .
+./scripts/llm_copy.sh --string .
+./scripts/llm_copy.sh . --save-path /tmp/bundle.txt
 ```
-cd /dir/of/interest/
-llm .
-llm_diff . --staged
+
+### `llm_git_diff.sh`
+
+Generate a git diff and copy either the file artifact or plain text to clipboard.
+
+- accepts standard `git diff` args
+- includes untracked files by default
+- use `--exclude-untracked` to skip untracked files
+
+Examples:
+
+```bash
+./scripts/llm_git_diff.sh . --staged
+./scripts/llm_git_diff.sh . --exclude-untracked -- path/inside/repo
+./scripts/llm_git_diff.sh . --string
 ```
+
+### `git_commit_separate.sh`
+
+Create one commit per changed file (including untracked/deleted files).
+
+### `git_clean_branches.sh`
+
+Prune remotes and delete local branches already merged into the default branch.
+
+### `clear_notebook_outputs.sh`
+
+Clear Jupyter notebook outputs recursively without changing code/markdown cells.
+
+### `multitail.sh`
+
+Tail all regular files in a directory and automatically include newly created files.
+
+## External Tools
+
+- Claude Code Monitor: <https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor>
+- Claude Code Usage: <https://github.com/ryoppippi/ccusage>
+
+## Logging and Debugging
+
+- scripts print validation and error messages to stderr
+- use `-h/--help` where supported for usage details
+- run from a clean shell if aliases/path overrides cause unexpected behavior
+
+## Documentation Map
+
+- `README.md`: repository overview and usage examples
+- `scripts/`: source of truth for command behavior
