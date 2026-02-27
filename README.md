@@ -2,6 +2,10 @@
 
 `commands` is a macOS first toolbox of small shell scripts for day to day developer work.
 
+## Current status
+
+This project is actively maintained for local developer workflows.
+
 ## What this project is trying to achieve
 
 Keep common terminal tasks in one place as scripts you can run, inspect, and adapt.
@@ -11,6 +15,12 @@ Keep common terminal tasks in one place as scripts you can run, inspect, and ada
 1. You run a script for a routine task.
 2. The script handles repetitive steps with clear terminal output.
 3. You can copy the script or add a shell alias for faster reuse.
+
+## Requirements
+
+- macOS shell environment (bash or zsh)
+- core CLI tools used by individual scripts, for example `git`
+- optional clipboard and notebook tooling used by specific scripts
 
 ## Quick start
 
