@@ -8,6 +8,29 @@ set -euo pipefail
 # - Expands untracked dirs and skips empty commits
 # - Message: "Updated: {filename}."
 
+usage() {
+  cat <<'USAGE'
+Usage: git_commit_separate.sh
+
+Create one commit per changed path in the current repository.
+Includes tracked, untracked, deleted, renamed, and copied paths.
+USAGE
+}
+
+if [[ $# -eq 1 ]]; then
+  case "$1" in
+    -h|--help|help)
+      usage
+      exit 0
+      ;;
+  esac
+fi
+
+if [[ $# -ne 0 ]]; then
+  echo "Error: usage: $(basename "$0")" >&2
+  exit 1
+fi
+
 # Ensure we're in a git repo
 git rev-parse --is-inside-work-tree >/dev/null
 

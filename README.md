@@ -38,6 +38,17 @@ alias ccm="claude-monitor"
 alias ccu="npx --yes ccusage@latest"
 ```
 
+4. Optional shell tab completion for script options.
+
+```bash
+# bash
+source ./completions/commands.bash
+
+# zsh
+fpath=(./completions $fpath)
+autoload -Uz compinit && compinit
+```
+
 ## Script reference
 
 ### `llm_copy.sh`
@@ -77,9 +88,17 @@ Examples.
 
 Create one commit per changed file, including untracked and deleted files.
 
+```bash
+./scripts/git_commit_separate.sh --help
+```
+
 ### `git_clean_branches.sh`
 
 Prune remotes and delete local branches already merged into the default branch.
+
+```bash
+./scripts/git_clean_branches.sh --help
+```
 
 ### `clear_notebook_outputs.sh`
 
@@ -97,11 +116,18 @@ Tail all regular files in a directory and include newly created files.
 ## Helpful tips
 
 - Scripts print validation and error messages to stderr.
-- Use `-h` or `--help` where supported.
+- Every script in `scripts/` supports `-h` and `--help`.
 - Run from a clean shell if aliases or path overrides cause confusion.
+
+## Known limitations
+
+- Scripts are macOS-first and several commands rely on macOS clipboard tools.
+- Some scripts assume Git repositories or local CLI tooling is already installed.
+- Completion definitions are static and may need updates when script options change.
 
 ## Documentation map
 
 - `README.md`: repository overview and usage examples
 - `scripts/`: source of truth for command behavior
+- `completions/`: optional shell completion definitions for script flags
 - `docs/project-preferences.md`: durable project maintenance preferences

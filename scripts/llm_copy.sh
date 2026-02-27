@@ -21,6 +21,7 @@ IGNORE_GITIGNORE="false"
 die() { echo "Error: $*" >&2; exit 1; }
 
 usage() {
+  local exit_code="${1:-1}"
   local ext_list name_list
   name_list=""
   ext_list="$(echo "$ALLOWED_EXTENSIONS" | sed 's/ /, ./g' | sed 's/^/./')"
@@ -41,7 +42,7 @@ Usage: llm_copy.sh [--string] [--save-path <file>] <path> [path ...]
 
 The tool gathers files with extensions: $ext_list${name_list:+ and filenames: $name_list}
 USAGE
-  exit 1
+  exit "$exit_code"
 }
 
 need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"; }
@@ -126,7 +127,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     -h|--help)
-      usage
+      usage 0
       ;;
     *)
       paths+=("$1")
@@ -135,7 +136,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ ${#paths[@]} -lt 1 ]] && usage
+[[ ${#paths[@]} -lt 1 ]] && usage 1
 
 # ---------------------------
 # Validate environment

@@ -30,6 +30,21 @@ readonly DIFF_CMD=("git" "--no-pager" "diff")
 # ---------------------------
 die() { echo "Error: $*" >&2; exit 1; }
 need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"; }
+usage() {
+  cat <<'USAGE'
+Usage: llm_git_diff.sh <repo_dir_or_subdir> [options] [git-diff-args...]
+
+Options:
+  --save-path <file>      Save diff to the given file
+  --save-path=<file>      Save diff to the given file
+  --exclude-untracked     Exclude untracked files (included by default)
+  --string                Copy plain diff text to clipboard instead of file
+  -h, --help              Show this help text
+
+Notes:
+  Script-specific options must appear before a standalone '--' separator.
+USAGE
+}
 
 # ---------------------------
 # validate environment
@@ -39,6 +54,15 @@ need_cmd git
 # ---------------------------
 # parse args
 # ---------------------------
+if [[ $# -eq 1 ]]; then
+  case "$1" in
+    -h|--help|help)
+      usage
+      exit 0
+      ;;
+  esac
+fi
+
 [[ $# -ge 1 ]] || die "usage: $(basename "$0") <repo_dir_or_subdir> [--save-path <file>] [--string] [git-diff-args...]"
 
 REPO_PATH="$1"; shift || true
