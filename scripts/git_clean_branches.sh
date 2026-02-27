@@ -4,6 +4,25 @@ set -euo pipefail
 # Prune stale remote-tracking refs and delete local branches merged into default.
 
 die() { echo "Error: $*" >&2; exit 1; }
+usage() {
+  cat <<'USAGE'
+Usage: git_clean_branches.sh
+
+Prune stale remote tracking references and delete local branches already merged
+into the default branch.
+
+This command is non-interactive. It never uses force-delete.
+USAGE
+}
+
+if [[ $# -eq 1 ]]; then
+  case "$1" in
+    -h|--help|help)
+      usage
+      exit 0
+      ;;
+  esac
+fi
 
 if [[ $# -ne 0 ]]; then
   die "usage: $(basename "$0")"
