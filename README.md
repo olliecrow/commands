@@ -149,3 +149,10 @@ Tail all regular files in a directory and include newly created files.
 - Avoid low-trust, obscure, or weakly maintained dependencies when a stronger alternative exists.
 - Pin versions and keep lockfiles current for reproducibility and supply-chain safety.
 - If trust signals are unclear, do not adopt the dependency until explicitly approved.
+
+<!-- third-party-policy:start -->
+## Third-Party Code Policy
+This repository allows external-code snapshots for static analysis only. External clones must stay in ephemeral `plan/` locations, be sanitized immediately (`rm -rf .git`, or remove all remotes first if `.git` is temporarily retained), and must never be executed.
+
+See `docs/untrusted-third-party-repos.md`.
+<!-- third-party-policy:end -->
