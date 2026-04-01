@@ -1,5 +1,10 @@
 # Repository Guidelines
 
+## Repository Ownership
+- This repository belongs under the personal GitHub account `olliecrow`.
+- Do not move it to a GitHub organization or a different personal account unless Ollie explicitly asks for that change.
+- When docs, remotes, automation, releases, or publishing steps need the owning GitHub account, use `olliecrow`.
+
 ## Plain English Default
 - Use plain English in chat, session replies, docs, notes, comments, reports, commit messages, issue text, and review text.
 - Prefer short words, short sentences, and direct statements.
