@@ -1,54 +1,33 @@
 # commands
 
-`commands` is a macOS first toolbox of small shell scripts for day to day developer work.
-
-## Current status
-
-This project is actively maintained for local developer workflows.
-
-## What this project is trying to achieve
-
-Keep common terminal tasks in one place as scripts you can run, inspect, and adapt.
-
-## What you experience as a user
-
-1. You run a script for a routine task.
-2. The script handles repetitive steps with clear terminal output.
-3. You can copy the script or add a shell alias for faster reuse.
+`commands` is a macOS-first toolbox of small shell scripts for common developer tasks.
 
 ## Requirements
 
-- macOS shell environment (bash or zsh)
-- core CLI tools used by individual scripts, for example `git`
-- optional clipboard and notebook tooling used by specific scripts
+- macOS with Bash
+- Git for the Git helpers
+- Python 3 for `clear_notebook_outputs.sh`
+- the built-in macOS clipboard tools for the LLM helpers
 
 ## Quick start
 
-1. Make scripts executable if needed.
-
-```bash
-chmod +x scripts/*.sh
-```
-
-2. Run scripts directly.
+Run scripts directly from a clone of this repository.
 
 ```bash
 ./scripts/llm_copy.sh .
 ./scripts/llm_git_diff.sh . --staged
 ```
 
-3. Optional alias setup.
+You can also add aliases that point to your clone.
 
 ```bash
-alias llm="$HOME/llm_copy.sh"
-alias llm_diff="$HOME/llm_git_diff.sh"
-alias clear_notebook_outputs="$HOME/clear_notebook_outputs.sh"
-alias multitail="$HOME/multitail.sh"
-alias ccm="claude-monitor"
-alias ccu="npx --yes ccusage@latest"
+alias llm="/path/to/commands/scripts/llm_copy.sh"
+alias llm_diff="/path/to/commands/scripts/llm_git_diff.sh"
+alias clear_notebook_outputs="/path/to/commands/scripts/clear_notebook_outputs.sh"
+alias multitail="/path/to/commands/scripts/multitail.sh"
 ```
 
-4. Optional shell tab completion for script options.
+Optional shell completion is available for Bash and zsh.
 
 ```bash
 # bash
@@ -59,6 +38,9 @@ fpath=(./completions $fpath)
 autoload -Uz compinit && compinit
 ```
 
+Bash completion requires
+[bash-completion](https://github.com/scop/bash-completion).
+
 ## Script reference
 
 ### `llm_copy.sh`
@@ -67,8 +49,9 @@ Bundle allowed files into one text artifact for sharing with LLM tools.
 
 - default mode copies a file reference to clipboard
 - `--string` copies raw text content
-- `--save-path` writes to an explicit output path
+- `--save-path` replaces the file at an explicit output path
 - respects `.gitignore` by default
+- excludes environment files from supported input
 
 Examples.
 
@@ -85,6 +68,7 @@ Generate a git diff and copy either the file artifact or plain text to clipboard
 - accepts standard `git diff` args
 - includes untracked files by default
 - use `--exclude-untracked` to skip untracked files
+- leaves the repository index unchanged
 
 Examples.
 
@@ -92,14 +76,6 @@ Examples.
 ./scripts/llm_git_diff.sh . --staged
 ./scripts/llm_git_diff.sh . --exclude-untracked -- path/inside/repo
 ./scripts/llm_git_diff.sh . --string
-```
-
-### `git_commit_separate.sh`
-
-Create one commit per changed file, including untracked and deleted files.
-
-```bash
-./scripts/git_commit_separate.sh --help
 ```
 
 ### `git_clean_branches.sh`
@@ -118,15 +94,10 @@ Clear Jupyter notebook outputs recursively without changing code or markdown cel
 
 Tail all regular files in a directory and include newly created files.
 
-## External tools
-
-- Claude Code Monitor: <https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor>
-- Claude Code Usage: <https://github.com/ryoppippi/ccusage>
-
 ## Helpful tips
 
 - Scripts print validation and error messages to stderr.
-- Every script in `scripts/` supports `-h` and `--help`.
+- Every user-facing script supports `-h` and `--help`.
 - Run from a clean shell if aliases or path overrides cause confusion.
 
 ## Known limitations
@@ -140,19 +111,20 @@ Tail all regular files in a directory and include newly created files.
 - `README.md`: repository overview and usage examples
 - `scripts/`: source of truth for command behavior
 - `completions/`: optional shell completion definitions for script flags
-- `docs/project-preferences.md`: durable project maintenance preferences
+- `AGENTS.md`: repository maintenance rules
+- `docs/decisions.md`: durable project decisions and reasons
+- `SECURITY.md`: private vulnerability reporting
 
-## Third-Party Dependency Trust Policy
-- Prefer official packages, libraries, SDKs, frameworks, and services from authoritative sources.
-- Prefer options that are reputable, well-maintained, popular, and well-supported.
-- Before adopting or upgrading third-party dependencies, verify ownership/publisher authenticity, maintenance activity, security history, license fit, and ecosystem adoption.
-- Avoid low-trust, obscure, or weakly maintained dependencies when a stronger alternative exists.
-- Pin versions and keep lockfiles current for reproducibility and supply-chain safety.
-- If trust signals are unclear, do not adopt the dependency until explicitly approved.
+## Development
 
-<!-- third-party-policy:start -->
-## Third-Party Code Policy
-This repository allows external-code snapshots for static analysis only. External clones must stay in ephemeral `plan/` locations, be sanitized immediately (`rm -rf .git`, or remove all remotes first if `.git` is temporarily retained), and must never be executed.
+Run the behavior tests before sending a change.
 
-See `docs/untrusted-third-party-repos.md`.
-<!-- third-party-policy:end -->
+```bash
+bash tests/run.sh
+```
+
+If `pre-commit` is installed, run its current-tree checks too.
+
+```bash
+pre-commit run --all-files
+```

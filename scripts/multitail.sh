@@ -25,13 +25,27 @@ USAGE
 
 need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"; }
 
-escape_pattern() {
-  # Escape regex chars so pgrep matches the full tail command safely.
-  printf '%s' "$1" | sed -e 's/[][^$.|?*+(){}\\]/\\&/g'
-}
+watched_files=()
+tail_processes=()
 
 cleanup() {
-  pkill -P $$ tail >/dev/null 2>&1 || true
+  local process_id
+  for process_id in "${tail_processes[@]}"; do
+    kill "$process_id" >/dev/null 2>&1 || true
+  done
+  wait "${tail_processes[@]}" 2>/dev/null || true
+}
+
+is_watched() {
+  local candidate="$1"
+  local index
+  for index in "${!watched_files[@]}"; do
+    if [[ "${watched_files[$index]}" == "$candidate" ]] &&
+      kill -0 "${tail_processes[$index]}" >/dev/null 2>&1; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 # ---------------------------
@@ -39,8 +53,6 @@ cleanup() {
 # ---------------------------
 main() {
   need_cmd tail
-  need_cmd pgrep
-  need_cmd pkill
 
   if [[ $# -eq 1 ]]; then
     case "$1" in
@@ -71,10 +83,10 @@ main() {
   while :; do
     for file in "$log_dir"/*; do
       [[ -f "$file" ]] || continue
-      local pattern
-      pattern="tail -n0 -F $(escape_pattern "$file")"
-      if ! pgrep -f "$pattern" >/dev/null 2>&1; then
+      if ! is_watched "$file"; then
         tail "${TAIL_ARGS[@]}" "$file" &
+        watched_files+=("$file")
+        tail_processes+=("$!")
       fi
     done
     sleep "$POLL_INTERVAL"

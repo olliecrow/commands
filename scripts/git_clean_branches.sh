@@ -17,7 +17,7 @@ USAGE
 
 if [[ $# -eq 1 ]]; then
   case "$1" in
-    -h|--help|help)
+    -h|--help)
       usage
       exit 0
       ;;
@@ -52,7 +52,6 @@ fi
 # Determine default branch (prefer remote HEAD, else init.defaultBranch, else main/master)
 base_name=""
 base_ref=""
-base_ref_is_remote=0
 default_remote=""
 
 if printf '%s\n' "$remotes" | grep -qx 'origin'; then
@@ -67,19 +66,16 @@ resolve_ref() {
   if [[ "$prefer_remote" -eq 1 && -n "$default_remote" ]] && git show-ref --verify --quiet "refs/remotes/$default_remote/$name"; then
     base_name="$name"
     base_ref="$default_remote/$name"
-    base_ref_is_remote=1
     return 0
   fi
   if git show-ref --verify --quiet "refs/heads/$name"; then
     base_name="$name"
     base_ref="$name"
-    base_ref_is_remote=0
     return 0
   fi
   if [[ -n "$default_remote" ]] && git show-ref --verify --quiet "refs/remotes/$default_remote/$name"; then
     base_name="$name"
     base_ref="$default_remote/$name"
-    base_ref_is_remote=1
     return 0
   fi
   return 1
@@ -87,7 +83,7 @@ resolve_ref() {
 
 if [[ -n "$default_remote" ]]; then
   if remote_head=$(git symbolic-ref -q "refs/remotes/$default_remote/HEAD" 2>/dev/null); then
-    resolve_ref "${remote_head#refs/remotes/$default_remote/}" "$has_remotes" || true
+    resolve_ref "${remote_head#refs/remotes/"$default_remote"/}" "$has_remotes" || true
   fi
 fi
 

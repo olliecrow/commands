@@ -43,7 +43,10 @@ need_cmd python3
 
 python3 - "$@" <<'PY'
 import json
+import os
+import stat
 import sys
+import tempfile
 from pathlib import Path
 
 paths = [Path(arg).expanduser() for arg in sys.argv[1:]]
@@ -107,33 +110,61 @@ for nb in notebooks:
         failures = True
         continue
 
+    if not isinstance(data, dict):
+        print(f"Error: invalid notebook structure in {pretty}", file=sys.stderr)
+        failures = True
+        continue
+
+    cells = data.get("cells")
+    if not isinstance(cells, list) or not all(isinstance(cell, dict) for cell in cells):
+        print(f"Error: invalid notebook structure in {pretty}", file=sys.stderr)
+        failures = True
+        continue
+
     changed = False
-    for cell in data.get("cells", []):
+    for cell in cells:
         if cell.get("cell_type") == "code":
-            if "outputs" in cell:
-                if cell["outputs"]:
-                    cell["outputs"] = []
-                    changed = True
-            else:
+            if cell.get("outputs") != []:
                 cell["outputs"] = []
                 changed = True
-        if "execution_count" in cell and cell["execution_count"] is not None:
-            cell["execution_count"] = None
-            changed = True
+            if cell.get("execution_count") is not None:
+                cell["execution_count"] = None
+                changed = True
 
     if not changed:
         print(f"No changes needed: {pretty}")
         continue
 
+    temporary_path = None
     try:
         text = json.dumps(data, indent=1, ensure_ascii=False)
         if not text.endswith("\n"):
             text += "\n"
-        nb.write_text(text, encoding="utf-8")
+
+        original_mode = stat.S_IMODE(nb.stat().st_mode)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=nb.parent,
+            prefix=f".{nb.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            temporary_file.write(text)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+
+        os.chmod(temporary_path, original_mode)
+        os.replace(temporary_path, nb)
+        temporary_path = None
     except OSError as exc:
         print(f"Error: failed to write {pretty}: {exc}", file=sys.stderr)
         failures = True
         continue
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
     cleared += 1
     print(f"Cleared outputs: {pretty}")
