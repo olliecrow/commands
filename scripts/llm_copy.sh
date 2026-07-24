@@ -8,8 +8,8 @@ set -euo pipefail
 # ---------------------------
 # Constants / configuration
 # ---------------------------
-readonly ALLOWED_EXTENSIONS="txt md py json jsonl yaml yml js html sh rs toml cfg css ini env rst c cc cpp h hpp cuh cu ts tsx jsx java rb go bat ps1 fish make cmake gradle"
-readonly ALLOWED_FILENAMES="Dockerfile Containerfile Imagefile Makefile Procfile Rakefile Gemfile Pipfile Brewfile Jenkinsfile Vagrantfile LICENSE COPYING NOTICE README CHANGES CHANGELOG VERSION ENV"
+readonly ALLOWED_EXTENSIONS="txt md py json jsonl yaml yml js html sh rs toml cfg css ini rst c cc cpp h hpp cuh cu ts tsx jsx java rb go bat ps1 fish make cmake gradle"
+readonly ALLOWED_FILENAMES="Dockerfile Containerfile Imagefile Makefile Procfile Rakefile Gemfile Pipfile Brewfile Jenkinsfile Vagrantfile LICENSE COPYING NOTICE README CHANGES CHANGELOG VERSION"
 readonly HEADER_PREFIX="# File: "
 readonly TMP_BASENAME="llm_bundle"
 MODE="file"  # "file" (default) | "text"
@@ -22,14 +22,18 @@ die() { echo "Error: $*" >&2; exit 1; }
 
 usage() {
   local exit_code="${1:-1}"
-  local ext_list name_list
+  local ext_list name_list output_fd
   name_list=""
   ext_list="$(echo "$ALLOWED_EXTENSIONS" | sed 's/ /, ./g' | sed 's/^/./')"
+  output_fd=2
+  if [[ "$exit_code" -eq 0 ]]; then
+    output_fd=1
+  fi
   if [[ -n "$ALLOWED_FILENAMES" ]]; then
     name_list="$(echo "$ALLOWED_FILENAMES" | tr ' ' ', ')"
   fi
 
-  cat >&2 <<USAGE
+  cat >&"$output_fd" <<USAGE
 Usage: llm_copy.sh [--string] [--save-path <file>] <path> [path ...]
 
   --string   Copy the PLAIN TEXT content to the macOS clipboard (not a file).
@@ -37,7 +41,7 @@ Usage: llm_copy.sh [--string] [--save-path <file>] <path> [path ...]
              Save the bundled output to the given path. In file mode, that
              file is also placed on the clipboard. In string mode, the text
              is copied to the clipboard and also written to the file.
-  --ignore_gitignore (alias: --ignore-gitignore)
+  --ignore-gitignore
              Ignore .gitignore filtering when gathering files.
 
 The tool gathers files with extensions: $ext_list${name_list:+ and filenames: $name_list}
@@ -77,7 +81,7 @@ is_allowed_file() {
 
 process_file() {
   local file="$1" rel_path="$2"
-  local display_path
+  local display_path file_absolute
   display_path="${rel_path:-$file}"
 
   if [[ ! -e "$file" ]]; then
@@ -96,10 +100,19 @@ process_file() {
     return 0
   fi
 
+  if [[ -n "$SAVE_PATH" ]]; then
+    file_absolute="$(cd "$(dirname "$file")" && pwd)/$(basename "$file")"
+    if [[ "$file_absolute" == "$SAVE_PATH" ]]; then
+      return 0
+    fi
+  fi
+
   is_allowed_file "$file" || return 0
-  printf "%s%s\n" "$HEADER_PREFIX" "$rel_path" >>"$TMP_FILE"
-  cat "$file" >>"$TMP_FILE"
-  printf "\n" >>"$TMP_FILE"
+  {
+    printf "%s%s\n" "$HEADER_PREFIX" "$rel_path"
+    cat "$file"
+    printf "\n"
+  } >>"$TMP_FILE"
 }
 
 # ---------------------------
@@ -113,21 +126,29 @@ while [[ $# -gt 0 ]]; do
       MODE="text"
       shift
       ;;
-    --save-path|--save_path)
+    --save-path)
       [[ $# -ge 2 ]] || die "--save-path requires a file path"
       SAVE_PATH="$2"
       shift 2
       ;;
-    --save-path=*|--save_path=*)
+    --save-path=*)
       SAVE_PATH="${1#*=}"
       shift
       ;;
-    --ignore_gitignore|--ignore-gitignore)
+    --ignore-gitignore)
       IGNORE_GITIGNORE="true"
       shift
       ;;
     -h|--help)
       usage 0
+      ;;
+    --)
+      shift
+      paths+=("$@")
+      break
+      ;;
+    -*)
+      die "Unknown option: $1"
       ;;
     *)
       paths+=("$1")
@@ -147,27 +168,32 @@ case "$MODE" in
   *) die "Invalid MODE: $MODE" ;;
 esac
 
-# Choose output file path.
-# In file mode, use .txt suffix for temp so paste targets see a text file.
+# Build into a temporary file. A requested save path is replaced only after the
+# bundle is complete, so a failed run does not damage an existing file.
+CLEANUP_BUILD_FILE=1
+cleanup() {
+  if [[ "$CLEANUP_BUILD_FILE" -eq 1 && -n "${BUILD_FILE:-}" ]]; then
+    rm -f -- "$BUILD_FILE"
+  fi
+}
+trap cleanup EXIT
+
 if [[ -n "$SAVE_PATH" ]]; then
   save_dir="$(dirname "$SAVE_PATH")"
   mkdir -p "$save_dir" || die "Failed to create directory: $save_dir"
-  # Normalize to absolute path
   SAVE_PATH="$(cd "$save_dir" && pwd)/$(basename "$SAVE_PATH")"
-  TMP_FILE="$SAVE_PATH"
-  # Never auto-delete a user-specified file.
-  trap ':' EXIT
+  BUILD_FILE="$(mktemp "$save_dir/.${TMP_BASENAME}.XXXXXX")"
+  OUTPUT_FILE="$SAVE_PATH"
 else
   if [[ "$MODE" == "file" ]]; then
-    TMP_FILE="$(mktemp -t "${TMP_BASENAME}.XXXXXX").txt"
-    # Do NOT auto-delete in file mode; user needs the file to persist for paste.
-    trap ':' EXIT
+    BUILD_FILE="$(mktemp -t "${TMP_BASENAME}.XXXXXX").txt"
+    OUTPUT_FILE="$BUILD_FILE"
   else
-    TMP_FILE="$(mktemp -t "${TMP_BASENAME}.XXXXXX")"
-    # Auto-delete temp in text mode only when not saving to a specific path.
-    trap 'rm -f "$TMP_FILE"' EXIT
+    BUILD_FILE="$(mktemp -t "${TMP_BASENAME}.XXXXXX")"
+    OUTPUT_FILE="$BUILD_FILE"
   fi
 fi
+TMP_FILE="$BUILD_FILE"
 
 # ---------------------------
 # Build bundle
@@ -185,7 +211,7 @@ for TARGET_PATH in "${paths[@]}"; do
       fi
     fi
 
-    rel="${TARGET_PATH#$ROOT/}"
+    rel="${TARGET_PATH#"$ROOT"/}"
     process_file "$TARGET_PATH" "$rel"
 
   elif [[ -d "$TARGET_PATH" ]]; then
@@ -211,7 +237,7 @@ for TARGET_PATH in "${paths[@]}"; do
     else
       # Fallback to original behavior when not in a repo or git isn't available.
       while IFS= read -r -d '' file; do
-        rel="${file#$TARGET_PATH/}"
+        rel="${file#"$TARGET_PATH"/}"
         # Skip any path whose component starts with '.'
         if [[ "$rel" =~ (^|/)\.[^/]+ ]]; then
           continue
@@ -228,6 +254,14 @@ done
 # Copy to clipboard
 # ---------------------------
 if [[ -s "$TMP_FILE" ]]; then
+  if [[ -n "$SAVE_PATH" ]]; then
+    mv -f -- "$BUILD_FILE" "$OUTPUT_FILE"
+    CLEANUP_BUILD_FILE=0
+    TMP_FILE="$OUTPUT_FILE"
+  elif [[ "$MODE" == "file" ]]; then
+    CLEANUP_BUILD_FILE=0
+  fi
+
   total_lines=$(wc -l <"$TMP_FILE")
   total_bytes=$(wc -c <"$TMP_FILE")
   if [[ -n "$SAVE_PATH" ]]; then
@@ -252,14 +286,13 @@ APPLESCRIPT
       echo "Placed file on clipboard: $TMP_FILE ($total_lines lines, $total_bytes bytes)"
       echo "Note: keep this file until you've pasted it."
     else
-      # Only delete the file if it was a temporary one we created.
-      if [[ -z "$SAVE_PATH" ]]; then rm -f "$TMP_FILE"; fi
+      if [[ -z "$SAVE_PATH" ]]; then
+        rm -f -- "$TMP_FILE"
+      fi
       die "Failed to place file on clipboard"
     fi
   fi
 else
-  # Nothing gathered
-  if [[ "$MODE" == "file" && -z "$SAVE_PATH" ]]; then rm -f "$TMP_FILE"; fi
   ext_list="$(echo "$ALLOWED_EXTENSIONS" | sed 's/ /, ./g' | sed 's/^/./')"
   if [[ -n "$ALLOWED_FILENAMES" ]]; then
     name_list=" and filenames: $(echo "$ALLOWED_FILENAMES" | tr ' ' ', ')"
