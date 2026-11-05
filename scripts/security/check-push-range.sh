@@ -27,6 +27,9 @@ die() {
 if [[ "$#" -eq 0 ]]; then
   from_ref="${PRE_COMMIT_FROM_REF:-}"
   to_ref="${PRE_COMMIT_TO_REF:-}"
+  # pre-commit calls this for one ref only, and not at all when that ref is
+  # already on the remote. A later ref in the same push, and an annotated
+  # tag on an already pushed commit, are not scanned here. See the README.
   # pre-commit sets no range when the push includes the root commit.
   # It still names the local ref, so resolve that ref to a commit.
   local_ref="${PRE_COMMIT_LOCAL_BRANCH:-}"

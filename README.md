@@ -123,6 +123,13 @@ Tail all regular files in a directory and include newly created files.
 
 - The clipboard modes of the LLM helpers work on macOS only.
 - Completion definitions are static and may need updates when script options change.
+- The pre-commit pre-push hook does not see every ref in one `git push`.
+  pre-commit runs it for the first ref only, and skips it when that ref's
+  commits are already on the remote. An annotated tag on an already pushed
+  commit is not scanned, and a later ref in the same push is not scanned.
+  Push one branch at a time. Checks CI scans commits that reach `main`.
+  It does not scan tag objects. CI is the backstop for commits on `main`,
+  not for tags or for refs the local hook did not see.
 
 ## Documentation map
 
@@ -141,8 +148,9 @@ Run the behavior tests before sending a change.
 bash tests/run.sh
 ```
 
-If `pre-commit` is installed, install its hooks (they also scan each push
-for secrets and local paths) and run its current-tree checks.
+If `pre-commit` is installed, install its hooks and run its current-tree
+checks. The pre-push hook scans only the commits pre-commit passes to it.
+See known limitations above. CI on `main` is the backstop.
 
 ```bash
 pre-commit install
