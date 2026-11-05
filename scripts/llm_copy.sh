@@ -10,10 +10,10 @@ set -euo pipefail
 # ---------------------------
 readonly ALLOWED_EXTENSIONS="txt md py json jsonl yaml yml js html sh rs toml cfg css ini rst c cc cpp h hpp cuh cu ts tsx jsx java rb go bat ps1 fish make cmake gradle"
 readonly ALLOWED_FILENAMES="Dockerfile Containerfile Imagefile Makefile Procfile Rakefile Gemfile Pipfile Brewfile Jenkinsfile Vagrantfile LICENSE COPYING NOTICE README CHANGES CHANGELOG VERSION"
-# Common secret files whose extension is otherwise allowed.
-readonly SECRET_FILENAMES="credentials.json credentials.yaml credentials.yml secrets.json secrets.yaml secrets.yml secrets.toml secrets.txt"
-# Keep in sync with known_token_regex in scripts/security/check-sensitive-text.sh.
-readonly KNOWN_TOKEN_REGEX='((ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9]{20,})'
+# Keep content patterns in sync with scripts/security/check-sensitive-text.sh.
+readonly SECRET_ASSIGNMENT_REGEX='([Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Tt][Oo][Kk][Ee][Nn]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Ss][Ee][Cc][Rr][Ee][Tt])["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_./+=-]{12,}'
+readonly KNOWN_TOKEN_REGEX='((ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,})'
+readonly PRIVATE_KEY_REGEX='-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY-----'
 readonly HEADER_PREFIX="# File: "
 readonly TMP_BASENAME="llm_bundle"
 MODE="file"  # "file" (default) | "text"
@@ -49,12 +49,13 @@ Usage: llm_copy.sh [--string] [--save-path <file>] [--allow-sensitive] <path> [p
   --ignore-gitignore
              Ignore .gitignore filtering when gathering files.
   --allow-sensitive
-             Copy the bundle even if it contains a known token format
-             (GitHub, AWS, or OpenAI-style keys). Without it, the run stops.
+             Include secret-like filenames and content. Without it, secret
+             names are skipped and credential-like content stops the run.
 
 The tool gathers files with $(allowed_inputs_text).
 Paths with a hidden component (a name that starts with ".") are skipped.
-These secret files are skipped: ${SECRET_FILENAMES// /, }.
+Secret-like names are skipped (case-insensitive): *secret*, *credential*,
+*.pem, *.key, id_rsa*, id_ed25519*, id_ecdsa*, id_dsa*, .env*, aws.ini.
 USAGE
   exit "$exit_code"
 }
@@ -143,11 +144,17 @@ process_file() {
     fi
   fi
 
-  is_allowed_file "$file" || return 0
-  if [[ " $SECRET_FILENAMES " == *" ${file##*/} "* ]]; then
-    echo "warning: skipping $display_path (looks like a secrets file)" >&2
-    return 0
+  local folded_base
+  folded_base="$(printf '%s' "${file##*/}" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+  if [[ "$ALLOW_SENSITIVE" != "true" ]]; then
+    case "$folded_base" in
+      *secret*|*credential*|*.pem|*.key|id_rsa*|id_ed25519*|id_ecdsa*|id_dsa*|.env*|aws.ini)
+        echo "warning: skipping $display_path (looks like a secrets file)" >&2
+        return 0
+        ;;
+    esac
   fi
+  is_allowed_file "$file" || return 0
   {
     printf "%s%s\n" "$HEADER_PREFIX" "$rel_path"
     cat "$file"
@@ -289,11 +296,11 @@ for TARGET_PATH in "${paths[@]}"; do
 done
 
 # ---------------------------
-# Stop on known token formats
+# Stop on credential-like content
 # ---------------------------
 # Print the bundle files that contain a token match. Only names are printed.
 report_token_files() {
-  grep -anE -e "^${HEADER_PREFIX}" -e "$KNOWN_TOKEN_REGEX" -- "$1" |
+  grep -anE -e "^${HEADER_PREFIX}" -e "$KNOWN_TOKEN_REGEX" -e "$SECRET_ASSIGNMENT_REGEX" -e "$PRIVATE_KEY_REGEX" -- "$1" |
     awk -v prefix="$HEADER_PREFIX" '{
       sub(/^[0-9]+:/, "")
       if (index($0, prefix) == 1) { current = substr($0, length(prefix) + 1); next }
@@ -303,11 +310,11 @@ report_token_files() {
 
 if [[ "$ALLOW_SENSITIVE" != "true" && -s "$TMP_FILE" ]]; then
   token_status=0
-  grep -aqE -e "$KNOWN_TOKEN_REGEX" -- "$TMP_FILE" || token_status=$?
+  grep -aqE -e "$KNOWN_TOKEN_REGEX" -e "$SECRET_ASSIGNMENT_REGEX" -e "$PRIVATE_KEY_REGEX" -- "$TMP_FILE" || token_status=$?
   if [[ "$token_status" -eq 0 ]]; then
-    echo "Error: the bundle contains a known token format in:" >&2
+    echo "Error: the bundle contains credential-like content in:" >&2
     report_token_files "$TMP_FILE"
-    die "nothing was copied or saved; remove the token or pass --allow-sensitive"
+    die "nothing was copied or saved; remove the sensitive content or pass --allow-sensitive"
   elif [[ "$token_status" -gt 1 ]]; then
     die "unable to scan the bundle for tokens"
   fi

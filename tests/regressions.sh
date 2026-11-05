@@ -72,6 +72,29 @@ case "${1:-}" in
     fi
     blocked scan_push --from "$base" --to "$tip"
     ;;
+  copy-names)
+    mkdir -p "$work/input"
+    printf 'safe\n' >"$work/input/keep.txt"
+    for name in Secrets.toml secret.txt secret.yaml client_secret.json credentials.toml aws.ini PRIVATE.KEY id_rsa.txt .env.txt; do
+      printf 'excluded body\n' >"$work/input/$name"
+    done
+    bash "$repo_root/scripts/llm_copy.sh" --save-path "$work/bundle" "$work/input" >"$work/stdout" 2>"$work/stderr"
+    if grep -q 'excluded body' "$work/bundle"; then fail "secret filename copied"; fi
+    bash "$repo_root/scripts/llm_copy.sh" --allow-sensitive --save-path "$work/override" "$work/input/Secrets.toml" >"$work/stdout" 2>"$work/stderr"
+    grep -q 'excluded body' "$work/override" || fail "filename override failed"
+    ;;
+  copy-json|copy-project|copy-pem)
+    case "$1" in
+      copy-json) printf '{"client_secret":"%s"}\n' "$value" >"$work/notes.txt" ;;
+      copy-project) printf '%s\n' "$project" >"$work/notes.txt" ;;
+      copy-pem) printf '%s%s\n' '-----BEGIN OPENSSH ' 'PRIVATE KEY-----' >"$work/notes.txt" ;;
+    esac
+    printf 'previous bundle\n' >"$work/bundle"
+    blocked bash "$repo_root/scripts/llm_copy.sh" --save-path "$work/bundle" "$work/notes.txt"
+    grep -qx 'previous bundle' "$work/bundle" || fail "output changed on failure"
+    bash "$repo_root/scripts/llm_copy.sh" --allow-sensitive --save-path "$work/bundle" "$work/notes.txt" >"$work/stdout" 2>"$work/stderr"
+    grep -q '# File:' "$work/bundle" || fail "content override failed"
+    ;;
   *) fail "unknown regression case" ;;
 esac
 echo "ok - $1"

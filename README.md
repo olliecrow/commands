@@ -59,9 +59,12 @@ Bundle allowed files into one text artifact for sharing with LLM tools.
 - respects `.gitignore` by default (`--ignore-gitignore` turns this off)
 - includes only the file extensions and names listed in `--help`
 - skips paths with a hidden part (a name that starts with `.`), such as `.env`
-- skips common secret files such as `credentials.json` and `secrets.toml`
-- stops, and copies nothing, if the bundle contains a known token format
-  (GitHub, AWS, or OpenAI-style keys); `--allow-sensitive` overrides this
+- skips secret-like names without regard to case: `*secret*`, `*credential*`,
+  `*.pem`, `*.key`, SSH private-key names, `.env*`, and `aws.ini`
+- stops before copying or saving credential-like assignments, private-key
+  headers, or GitHub, AWS, and OpenAI-style keys (including project keys)
+- `--allow-sensitive` overrides secret-name and content checks; the normal
+  file type and hidden-path rules still apply
 
 Examples.
 
