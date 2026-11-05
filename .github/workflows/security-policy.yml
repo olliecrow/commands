@@ -12,14 +12,37 @@ permissions:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Run script tests
         run: bash tests/run.sh
+
+      # Tools are downloaded, checked against a pinned SHA-256, and unpacked
+      # outside the checkout.
+      - name: Install shellcheck
+        run: |
+          set -euo pipefail
+          version="0.11.0"
+          archive="shellcheck-v${version}.linux.x86_64.tar.xz"
+          base_url="https://github.com/koalaman/shellcheck/releases/download/v${version}"
+          expected_sha256="8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
+          workdir="${RUNNER_TEMP}/shellcheck-install"
+          mkdir -p "${workdir}" "${RUNNER_TEMP}/bin"
+          cd "${workdir}"
+          curl -sSfL -o "${archive}" "${base_url}/${archive}"
+          printf '%s  %s\n' "${expected_sha256}" "${archive}" | sha256sum -c -
+          tar -xJf "${archive}"
+          install -m 0755 "shellcheck-v${version}/shellcheck" "${RUNNER_TEMP}/bin/shellcheck"
+          echo "${RUNNER_TEMP}/bin" >> "$GITHUB_PATH"
+
+      - name: Run shellcheck
+        run: shellcheck -x -S warning scripts/*.sh scripts/security/*.sh tests/run.sh completions/commands.bash
 
       - name: Install gitleaks
         run: |
@@ -28,11 +51,14 @@ jobs:
           archive="gitleaks_${version}_linux_x64.tar.gz"
           base_url="https://github.com/gitleaks/gitleaks/releases/download/v${version}"
           expected_sha256="551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+          workdir="${RUNNER_TEMP}/gitleaks-install"
+          mkdir -p "${workdir}" "${RUNNER_TEMP}/bin"
+          cd "${workdir}"
           curl -sSfL -o "${archive}" "${base_url}/${archive}"
           printf '%s  %s\n' "${expected_sha256}" "${archive}" | sha256sum -c -
           tar -xzf "${archive}"
-          install -m 0755 gitleaks "$RUNNER_TEMP/gitleaks"
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          install -m 0755 gitleaks "${RUNNER_TEMP}/bin/gitleaks"
+          echo "${RUNNER_TEMP}/bin" >> "$GITHUB_PATH"
 
       - name: Scan pushed/PR commit range with gitleaks
         env:
