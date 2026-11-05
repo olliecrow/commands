@@ -34,11 +34,20 @@ assert_not_contains() {
   fi
 }
 
+# Stubs exit without reading stdin, like a clipboard tool that fails early.
 make_clipboard_stub() {
-  local bin_dir="$1"
+  local bin_dir="$1" tool
   mkdir -p "$bin_dir"
-  printf '#!/usr/bin/env sh\nexit 0\n' >"$bin_dir/pbcopy"
-  chmod +x "$bin_dir/pbcopy"
+  for tool in pbcopy osascript; do
+    printf '#!/usr/bin/env sh\nexit 0\n' >"$bin_dir/$tool"
+    chmod +x "$bin_dir/$tool"
+  done
+}
+
+# True when PATH=/usr/bin:/bin has no clipboard tools (Linux CI, not macOS).
+clipboard_tools_absent() {
+  ! PATH="/usr/bin:/bin" command -v pbcopy >/dev/null 2>&1 &&
+    ! PATH="/usr/bin:/bin" command -v osascript >/dev/null 2>&1
 }
 
 test_help() {
@@ -99,6 +108,13 @@ test_llm_copy() {
   printf 'ignore me\n' >"$input_dir/ignored.txt"
   printf 'do not share\n' >"$input_dir/config.env"
   printf 'ignored.txt\n' >"$input_dir/.gitignore"
+  printf 'make body\n' >"$input_dir/Makefile"
+  printf 'readme body\n' >"$input_dir/README"
+  printf 'trailing dot body\n' >"$input_dir/foo."
+  printf 'space body\n' >"$input_dir/a b.txt"
+  printf 'newline body\n' >"$input_dir/new"$'\n'"line.txt"
+  mkdir -p "$input_dir/.hidden"
+  printf 'hidden body\n' >"$input_dir/.hidden/keep.txt"
   printf 'old output\n' >"$output_file"
   git -C "$input_dir" init -q
 
@@ -107,11 +123,61 @@ test_llm_copy() {
 
   assert_contains "$output_file" "# File: keep.txt"
   assert_contains "$output_file" "include me"
+  assert_contains "$output_file" "make body"
+  assert_contains "$output_file" "readme body"
+  assert_contains "$output_file" "space body"
+  assert_contains "$output_file" "newline body"
+  assert_not_contains "$output_file" "trailing dot body"
+  assert_not_contains "$output_file" "hidden body"
   assert_not_contains "$output_file" "ignore me"
   assert_not_contains "$output_file" "do not share"
   assert_not_contains "$output_file" "old output"
   assert_not_contains "$output_file" "# File: bundle.txt"
+
+  # The same input outside Git uses find, and must give the same files.
+  local plain_dir="$work_dir/plain" plain_output="$work_dir/plain.txt"
+  mkdir -p "$plain_dir"
+  cp "$input_dir/keep.txt" "$input_dir/a b.txt" "$input_dir/new"$'\n'"line.txt" "$plain_dir/"
+  PATH="$bin_dir:/usr/bin:/bin" "$repo_root/scripts/llm_copy.sh" \
+    --string --save-path "$plain_output" "$plain_dir" >/dev/null
+  assert_contains "$plain_output" "space body"
+  assert_contains "$plain_output" "newline body"
   pass "deterministic LLM bundle output"
+}
+
+test_llm_copy_temp_files() {
+  local work_dir="$test_root/llm-copy-temp"
+  local bin_dir="$work_dir/bin"
+  local tmp_dir="$work_dir/tmp"
+  mkdir -p "$work_dir/input" "$tmp_dir"
+  make_clipboard_stub "$bin_dir"
+  printf 'body\n' >"$work_dir/input/keep.txt"
+
+  TMPDIR="$tmp_dir" PATH="$bin_dir:/usr/bin:/bin" \
+    "$repo_root/scripts/llm_copy.sh" --string "$work_dir/input" >/dev/null
+  [[ -z "$(ls -A "$tmp_dir")" ]] || fail "--string left a temporary file"
+
+  TMPDIR="$tmp_dir" PATH="$bin_dir:/usr/bin:/bin" \
+    "$repo_root/scripts/llm_copy.sh" "$work_dir/input" >/dev/null
+  local kept
+  kept="$(ls -A "$tmp_dir")"
+  [[ "$kept" == llm_bundle.*.txt && "$kept" != *$'\n'* ]] ||
+    fail "file mode should keep exactly one .txt file, found: $kept"
+
+  if clipboard_tools_absent; then
+    local saved="$work_dir/saved.txt" error_file="$work_dir/error.txt"
+    PATH="/usr/bin:/bin" "$repo_root/scripts/llm_copy.sh" --string \
+      --save-path "$saved" "$work_dir/input" >/dev/null 2>"$error_file" ||
+      fail "--save-path failed without a clipboard tool"
+    assert_contains "$saved" "body"
+    assert_contains "$error_file" "file was saved only"
+    if PATH="/usr/bin:/bin" "$repo_root/scripts/llm_copy.sh" --string \
+      "$work_dir/input" >/dev/null 2>"$error_file"; then
+      fail "missing clipboard tool without --save-path was accepted"
+    fi
+    assert_contains "$error_file" "--save-path"
+  fi
+  pass "LLM bundle temporary files and clipboard fallback"
 }
 
 test_llm_git_diff() {
@@ -159,6 +225,24 @@ test_llm_git_diff() {
   [[ "$before_status" == "$after_status" ]] || fail "staged diff changed the Git index"
   assert_contains "$output_file" "untracked.txt"
   assert_contains "$output_file" "+new"
+
+  # A diff driver from the repo config must not run.
+  local marker="$work_dir/external-diff-ran"
+  printf '#!/usr/bin/env sh\n: >"%s"\n' "$marker" >"$work_dir/external-diff.sh"
+  chmod +x "$work_dir/external-diff.sh"
+  git -C "$repo_dir" config diff.external "$work_dir/external-diff.sh"
+  PATH="$bin_dir:/usr/bin:/bin" "$repo_root/scripts/llm_git_diff.sh" \
+    "$repo_dir" --string --save-path "$output_file" --staged >/dev/null
+  [[ ! -e "$marker" ]] || fail "llm_git_diff ran an external diff driver"
+  assert_contains "$output_file" "+after"
+  git -C "$repo_dir" config --unset diff.external
+
+  if clipboard_tools_absent; then
+    PATH="/usr/bin:/bin" "$repo_root/scripts/llm_git_diff.sh" \
+      "$repo_dir" --save-path "$output_file" --staged >/dev/null 2>&1 ||
+      fail "llm_git_diff --save-path failed without a clipboard tool"
+    assert_contains "$output_file" "+after"
+  fi
   pass "read-only Git diff generation"
 }
 
@@ -349,7 +433,7 @@ test_push_range_policy() {
   local side_commit
   side_commit="$(git -C "$repo_dir" rev-parse HEAD)"
   git -C "$repo_dir" switch -q -c merged "$clean_commit"
-  git -C "$repo_dir" merge -q --no-ff --no-commit side >/dev/null
+  git -C "$repo_dir" merge -q --no-ff --no-commit side >/dev/null 2>&1
   printf 'token=%s\n' "$secret_value" >"$repo_dir/merge.txt"
   git -C "$repo_dir" add merge.txt
   git -C "$repo_dir" commit -q -m "Merge side"
@@ -364,6 +448,7 @@ test_push_range_policy() {
 test_help
 test_notebook_cleanup
 test_llm_copy
+test_llm_copy_temp_files
 test_llm_git_diff
 test_branch_cleanup
 test_multitail

@@ -20,17 +20,16 @@ IGNORE_GITIGNORE="false"
 # ---------------------------
 die() { echo "Error: $*" >&2; exit 1; }
 
+allowed_inputs_text() {
+  printf 'extensions: .%s and filenames: %s' \
+    "${ALLOWED_EXTENSIONS// /, .}" "${ALLOWED_FILENAMES// /, }"
+}
+
 usage() {
   local exit_code="${1:-1}"
-  local ext_list name_list output_fd
-  name_list=""
-  ext_list="$(echo "$ALLOWED_EXTENSIONS" | sed 's/ /, ./g' | sed 's/^/./')"
-  output_fd=2
+  local output_fd=2
   if [[ "$exit_code" -eq 0 ]]; then
     output_fd=1
-  fi
-  if [[ -n "$ALLOWED_FILENAMES" ]]; then
-    name_list="$(echo "$ALLOWED_FILENAMES" | tr ' ' ', ')"
   fi
 
   cat >&"$output_fd" <<USAGE
@@ -40,16 +39,16 @@ Usage: llm_copy.sh [--string] [--save-path <file>] <path> [path ...]
   --save-path <file>
              Save the bundled output to the given path. In file mode, that
              file is also placed on the clipboard. In string mode, the text
-             is copied to the clipboard and also written to the file.
+             is copied to the clipboard and also written to the file. If the
+             clipboard tool is missing, the file is still saved.
   --ignore-gitignore
              Ignore .gitignore filtering when gathering files.
 
-The tool gathers files with extensions: $ext_list${name_list:+ and filenames: $name_list}
+The tool gathers files with $(allowed_inputs_text).
+Paths with a hidden component (a name that starts with ".") are skipped.
 USAGE
   exit "$exit_code"
 }
-
-need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"; }
 
 has_git() { command -v git >/dev/null 2>&1; }
 
@@ -60,23 +59,49 @@ is_in_git_repo() {
   git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1
 }
 
-# Echoes the repo toplevel for PATH (or empty on failure).
-git_toplevel_for() {
-  local p="$1" dir
-  if [[ -d "$p" ]]; then dir="$p"; else dir="$(dirname "$p")"; fi
-  git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true
-}
-
+# Match whole words in the space-separated lists without starting a process
+# per file. A name with no dot uses the filename list only.
 is_allowed_file() {
   local file="$1" base ext
   base="${file##*/}"
   ext="${base##*.}"
 
   if [[ "$base" == "$ext" ]]; then
-    [[ -n "$ALLOWED_FILENAMES" ]] && echo "$ALLOWED_FILENAMES" | tr ' ' '\n' | grep -Fxq "$base"
+    [[ "$base" != *" "* ]] && [[ " $ALLOWED_FILENAMES " == *" $base "* ]]
   else
-    echo "$ALLOWED_EXTENSIONS" | grep -qw "$ext"
+    [[ -n "$ext" && "$ext" != *" "* ]] && [[ " $ALLOWED_EXTENSIONS " == *" $ext "* ]]
   fi
+}
+
+# True if any path component starts with ".".
+has_hidden_component() {
+  [[ "/$1" == */.* ]]
+}
+
+# Sort NUL-separated names. macOS sort has no -z, so each name is put on
+# one line ("%" becomes %25 and newline becomes %0A), sorted, and restored.
+# This encoding avoids backslashes, which bash 3.2 and bash 5 treat
+# differently in a ${name//pattern/replacement} replacement.
+sort_nul() {
+  local percent='%' newline=$'\n' name
+  while IFS= read -r -d '' name; do
+    [[ -n "$name" ]] || continue
+    name=${name//"$percent"/${percent}25}
+    name=${name//"$newline"/${percent}0A}
+    printf '%s\n' "$name"
+  done | LC_ALL=C sort | while IFS= read -r name; do
+    name=${name//"$percent"0A/$newline}
+    name=${name//"$percent"25/$percent}
+    printf '%s\0' "$name"
+  done
+}
+
+# Create an empty file named <random>.txt in the temp directory.
+make_temp_txt() {
+  local tmp_root="${TMPDIR:-/tmp}" raw
+  raw="$(mktemp "${tmp_root%/}/${TMP_BASENAME}.XXXXXX")" || return 1
+  mv -- "$raw" "$raw.txt" || { rm -f -- "$raw"; return 1; }
+  printf '%s\n' "$raw.txt"
 }
 
 process_file() {
@@ -100,7 +125,9 @@ process_file() {
     return 0
   fi
 
-  if [[ -n "$SAVE_PATH" ]]; then
+  # Skip the output file itself. Compare names first to avoid a subshell
+  # per file.
+  if [[ -n "$SAVE_PATH" && "${file##*/}" == "${SAVE_PATH##*/}" ]]; then
     file_absolute="$(cd "$(dirname "$file")" && pwd)/$(basename "$file")"
     if [[ "$file_absolute" == "$SAVE_PATH" ]]; then
       return 0
@@ -163,10 +190,15 @@ done
 # Validate environment
 # ---------------------------
 case "$MODE" in
-  file) need_cmd osascript ;;
-  text) need_cmd pbcopy ;;
+  file) CLIPBOARD_CMD="osascript" ;;
+  text) CLIPBOARD_CMD="pbcopy" ;;
   *) die "Invalid MODE: $MODE" ;;
 esac
+if ! command -v "$CLIPBOARD_CMD" >/dev/null 2>&1; then
+  [[ -n "$SAVE_PATH" ]] ||
+    die "Required command not found: $CLIPBOARD_CMD (use --save-path to save a file instead)"
+  CLIPBOARD_CMD=""
+fi
 
 # Build into a temporary file. A requested save path is replaced only after the
 # bundle is complete, so a failed run does not damage an existing file.
@@ -185,13 +217,8 @@ if [[ -n "$SAVE_PATH" ]]; then
   BUILD_FILE="$(mktemp "$save_dir/.${TMP_BASENAME}.XXXXXX")"
   OUTPUT_FILE="$SAVE_PATH"
 else
-  if [[ "$MODE" == "file" ]]; then
-    BUILD_FILE="$(mktemp -t "${TMP_BASENAME}.XXXXXX").txt"
-    OUTPUT_FILE="$BUILD_FILE"
-  else
-    BUILD_FILE="$(mktemp -t "${TMP_BASENAME}.XXXXXX")"
-    OUTPUT_FILE="$BUILD_FILE"
-  fi
+  BUILD_FILE="$(make_temp_txt)" || die "Failed to create a temporary file"
+  OUTPUT_FILE="$BUILD_FILE"
 fi
 TMP_FILE="$BUILD_FILE"
 
@@ -227,23 +254,17 @@ for TARGET_PATH in "${paths[@]}"; do
         # Compute path relative to the user-specified TARGET_PATH for the header and hidden-dir filter.
         rel="$git_rel"
 
-        # Preserve existing behavior: skip any path that has a hidden directory component (.^)
-        if [[ "$rel" =~ (^|/)\.[^/]+ ]]; then
-          continue
-        fi
+        has_hidden_component "$rel" && continue
 
         process_file "$file_abs" "$rel"
-      done < <(git -C "$TARGET_ABS" ls-files -z --cached --others --exclude-standard -- . | sort -z)
+      done < <(git -C "$TARGET_ABS" ls-files -z --cached --others --exclude-standard -- . | sort_nul)
     else
       # Fallback to original behavior when not in a repo or git isn't available.
       while IFS= read -r -d '' file; do
         rel="${file#"$TARGET_PATH"/}"
-        # Skip any path whose component starts with '.'
-        if [[ "$rel" =~ (^|/)\.[^/]+ ]]; then
-          continue
-        fi
+        has_hidden_component "$rel" && continue
         process_file "$file" "$rel"
-      done < <(find "$TARGET_PATH" -type f -print0 | sort -z)
+      done < <(find "$TARGET_PATH" -type f -print0 | sort_nul)
     fi
   else
     echo "Warning: '$TARGET_PATH' does not exist or is not a file/directory" >&2
@@ -262,14 +283,15 @@ if [[ -s "$TMP_FILE" ]]; then
     CLEANUP_BUILD_FILE=0
   fi
 
-  total_lines=$(wc -l <"$TMP_FILE")
-  total_bytes=$(wc -c <"$TMP_FILE")
+  total_lines="$(wc -l <"$TMP_FILE" | tr -d '[:space:]')"
+  total_bytes="$(wc -c <"$TMP_FILE" | tr -d '[:space:]')"
   if [[ -n "$SAVE_PATH" ]]; then
     echo "Saved bundle to: $TMP_FILE ($total_lines lines, $total_bytes bytes)"
   fi
-  if [[ "$MODE" == "text" ]]; then
-    # Stream contents to clipboard
-    if cat "$TMP_FILE" | pbcopy; then
+  if [[ -z "$CLIPBOARD_CMD" ]]; then
+    echo "warning: clipboard tool not found; file was saved only" >&2
+  elif [[ "$MODE" == "text" ]]; then
+    if pbcopy <"$TMP_FILE"; then
       echo "Content copied to clipboard ($total_lines lines, $total_bytes bytes)"
     else
       die "Failed to copy content to clipboard"
@@ -293,11 +315,5 @@ APPLESCRIPT
     fi
   fi
 else
-  ext_list="$(echo "$ALLOWED_EXTENSIONS" | sed 's/ /, ./g' | sed 's/^/./')"
-  if [[ -n "$ALLOWED_FILENAMES" ]]; then
-    name_list=" and filenames: $(echo "$ALLOWED_FILENAMES" | tr ' ' ', ')"
-  else
-    name_list=""
-  fi
-  echo "No supported files found ($ext_list$name_list)"
+  echo "No supported files found ($(allowed_inputs_text))"
 fi

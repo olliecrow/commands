@@ -39,6 +39,8 @@ Options:
 
 Notes:
   Script-specific options must appear before a standalone '--' separator.
+  If the clipboard tool is missing, --save-path still saves the file.
+  External diff drivers are not run.
 USAGE
 }
 
@@ -123,11 +125,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Validate clipboard tooling now that we know the mode
-if [[ "$CLIPBOARD_TEXT" -eq 1 ]]; then
-  need_cmd pbcopy
-else
-  need_cmd osascript
+# Validate clipboard tooling now that we know the mode. With --save-path the
+# file is still useful without a clipboard tool.
+CLIPBOARD_CMD="osascript"
+[[ "$CLIPBOARD_TEXT" -eq 1 ]] && CLIPBOARD_CMD="pbcopy"
+if ! command -v "$CLIPBOARD_CMD" >/dev/null 2>&1; then
+  [[ -n "$SAVE_PATH" ]] ||
+    die "Required command not found: $CLIPBOARD_CMD (use --save-path to save a file instead)"
+  CLIPBOARD_CMD=""
 fi
 
 # Extract any pathspec provided to forward to ls-files when handling untracked entries
@@ -155,9 +160,10 @@ if [[ -n "$SAVE_PATH" ]]; then
   SAVE_PATH="$(cd "$save_dir" && pwd)/$(basename "$SAVE_PATH")"
   TXT_FILE="$(mktemp "$save_dir/.${TMP_BASENAME}.XXXXXX")"
 else
-  TMP_FILE="$(mktemp -t "${TMP_BASENAME}.XXXXXX")"
+  tmp_root="${TMPDIR:-/tmp}"
+  TMP_FILE="$(mktemp "${tmp_root%/}/${TMP_BASENAME}.XXXXXX")"
   TXT_FILE="${TMP_FILE}.txt"
-  mv "$TMP_FILE" "$TXT_FILE"
+  mv -- "$TMP_FILE" "$TXT_FILE"
 fi
 
 # Use a copy of the Git index when including untracked files. This preserves the
@@ -186,12 +192,13 @@ if [[ "$INCLUDE_UNTRACKED" -eq 1 ]]; then
     done < <(git -C "$REPO_PATH" ls-files --others --exclude-standard -z)
   fi
   if [[ ${#UNTRACKED[@]} -gt 0 ]]; then
-    TEMP_INDEX_DIR="$(mktemp -d -t "${TMP_BASENAME}_index.XXXXXX")"
+    TEMP_INDEX_DIR="$(mktemp -d "${TMPDIR:-/tmp}/${TMP_BASENAME}_index.XXXXXX")"
     TEMP_INDEX_FILE="$TEMP_INDEX_DIR/index"
     real_git_dir="$(git -C "$REPO_PATH" rev-parse --absolute-git-dir)"
     if [[ -f "$real_git_dir/index" ]]; then
       cp -p "$real_git_dir/index" "$TEMP_INDEX_FILE"
     fi
+    # git add runs any clean filter that the repo config sets for these files.
     if [[ "$STAGED_DIFF" -eq 1 ]]; then
       GIT_INDEX_FILE="$TEMP_INDEX_FILE" git -C "$REPO_PATH" add -- "${UNTRACKED[@]}"
     else
@@ -206,11 +213,11 @@ fi
 #   -- name/of/file
 #   COMMITA..COMMITB -- path/inside/repo
 if [[ -n "$TEMP_INDEX_FILE" ]]; then
-  GIT_INDEX_FILE="$TEMP_INDEX_FILE" git -C "$REPO_PATH" --no-pager diff ${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"} >"$TXT_FILE" || {
+  GIT_INDEX_FILE="$TEMP_INDEX_FILE" git -C "$REPO_PATH" --no-pager diff --no-ext-diff ${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"} >"$TXT_FILE" || {
     die "git diff failed"
   }
 else
-  git -C "$REPO_PATH" --no-pager diff ${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"} >"$TXT_FILE" || {
+  git -C "$REPO_PATH" --no-pager diff --no-ext-diff ${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"} >"$TXT_FILE" || {
     die "git diff failed"
   }
 fi
@@ -226,10 +233,12 @@ fi
 # put the FILE on macOS clipboard
 # ---------------------------
 # Note: The file must persist until you've pasted it.
-if [[ "$CLIPBOARD_TEXT" -eq 1 ]]; then
-  lines=$(wc -l <"$TXT_FILE" | tr -d ' ')
-  bytes=$(wc -c <"$TXT_FILE" | tr -d ' ')
-  if cat "$TXT_FILE" | pbcopy; then
+lines="$(wc -l <"$TXT_FILE" | tr -d '[:space:]')"
+bytes="$(wc -c <"$TXT_FILE" | tr -d '[:space:]')"
+if [[ -z "$CLIPBOARD_CMD" ]]; then
+  echo "warning: clipboard tool not found; file was saved only" >&2
+elif [[ "$CLIPBOARD_TEXT" -eq 1 ]]; then
+  if pbcopy <"$TXT_FILE"; then
     echo "Copied text to clipboard (${lines} lines, ${bytes} bytes)"
   else
     die "Failed to copy text to clipboard"
@@ -242,8 +251,6 @@ end run
 APPLESCRIPT
 then
   REMOVE_OUTPUT_ON_EXIT=0
-  lines=$(wc -l <"$TXT_FILE" | tr -d ' ')
-  bytes=$(wc -c <"$TXT_FILE" | tr -d ' ')
   echo "Placed file on clipboard:"
   echo "  $TXT_FILE  (${lines} lines, ${bytes} bytes)"
   echo "Note: keep this file until after you paste."
