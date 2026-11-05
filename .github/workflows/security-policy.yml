@@ -64,7 +64,7 @@ jobs:
           COMMANDS_TEST_REQUIRE_GITLEAKS: "1"
         run: bash tests/run.sh
 
-      - name: Scan pushed/PR commit range with gitleaks
+      - name: Resolve the commit range to scan
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -72,34 +72,24 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            range="${PR_BASE_SHA}..${PR_HEAD_SHA}"
-          elif [[ -z "${PUSH_BEFORE_SHA}" || "${PUSH_BEFORE_SHA}" == "0000000000000000000000000000000000000000" ]] ||
-               ! git cat-file -e "${PUSH_BEFORE_SHA}^{commit}" 2>/dev/null; then
-            range="${GITHUB_SHA}"
+            from="${PR_BASE_SHA}"
+            to="${PR_HEAD_SHA}"
           else
-            range="${PUSH_BEFORE_SHA}..${GITHUB_SHA}"
-          fi
-          # Also scan what a merge commit adds against its first parent.
-          gitleaks git --redact --verbose --config .gitleaks.toml \
-            --log-opts="--text --no-ext-diff --no-textconv --diff-merges=first-parent ${range}"
-
-      - name: Check pushed/PR commit messages and added lines
-        env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PUSH_BEFORE_SHA: ${{ github.event.before }}
-        run: |
-          set -euo pipefail
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            bash scripts/security/check-push-range.sh --from "${PR_BASE_SHA}" --to "${PR_HEAD_SHA}"
-          else
-            base="${PUSH_BEFORE_SHA}"
-            if [[ -z "$base" || "$base" == "0000000000000000000000000000000000000000" ]] ||
-               ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
-              base="0000000000000000000000000000000000000000"
+            from="${PUSH_BEFORE_SHA}"
+            to="${GITHUB_SHA}"
+            # A missing, all-zero, or unknown base means: scan all history.
+            if [[ -z "$from" ]] || ! git cat-file -e "${from}^{commit}" 2>/dev/null; then
+              from="0000000000000000000000000000000000000000"
             fi
-            bash scripts/security/check-push-range.sh --from "$base" --to "${GITHUB_SHA}"
           fi
+          printf 'SCAN_FROM=%s\nSCAN_TO=%s\n' "$from" "$to" >>"$GITHUB_ENV"
+
+      # The wrapper fails when gitleaks logs an error or scans too few commits.
+      - name: Scan the commit range with gitleaks
+        run: bash scripts/security/gitleaks-range.sh --from "${SCAN_FROM}" --to "${SCAN_TO}"
+
+      - name: Check commit messages and added lines in the range
+        run: bash scripts/security/check-push-range.sh --from "${SCAN_FROM}" --to "${SCAN_TO}"
 
       - name: Check pull request title/body for policy violations
         if: github.event_name == 'pull_request'

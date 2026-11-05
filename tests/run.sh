@@ -577,8 +577,10 @@ done
 
 # These cases need gitleaks. CI installs it and sets COMMANDS_TEST_REQUIRE_GITLEAKS.
 if command -v gitleaks >/dev/null 2>&1; then
-  bash "$repo_root/tests/regressions.sh" gitleaks-paths
-  regression_count=$((regression_count + 1))
+  for regression in gitleaks-paths gitleaks-range; do
+    bash "$repo_root/tests/regressions.sh" "$regression"
+    regression_count=$((regression_count + 1))
+  done
 elif [[ "${COMMANDS_TEST_REQUIRE_GITLEAKS:-}" == 1 ]]; then
   fail "gitleaks is not on PATH"
 else

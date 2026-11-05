@@ -422,6 +422,43 @@ case "${1:-}" in
       status_is 0 scan_tree "$path"
     done
     ;;
+  gitleaks-range)
+    init_repo
+    scan_range() { (cd "$work/repo" && bash "$repo_root/scripts/security/gitleaks-range.sh" "$@"); }
+    printf 'one\ntwo\n' >"$work/repo/a.txt"
+    commit_files
+    clean="$tip"
+    status_is 0 scan_range --from "$base" --to "$clean"
+    status_is 0 scan_range --to "$clean"
+    status_is 0 scan_range --from "$clean" --to "$clean"
+    grep -q "no commits to scan" "$work/stdout" || fail "empty range was not reported"
+    # A commit that only removes lines is not counted by gitleaks.
+    printf 'one\n' >"$work/repo/a.txt"
+    commit_files
+    status_is 0 scan_range --from "$clean" --to "$tip"
+    status_is 2 scan_range --from "$base " --to "$clean"
+    status_is 2 scan_range --from 1111111111111111111111111111111111111111 --to "$clean"
+    status_is 2 scan_range --to bad-ref
+    status_is 2 scan_range --from "$base"
+    # A fake gitleaks that logs a git error, or scans nothing, and exits 0.
+    mkdir -p "$work/bin"
+    printf '#!/bin/sh\necho "1:00PM INF 0 commits scanned."\necho "1:00PM INF no leaks found"\n' >"$work/bin/gitleaks"
+    chmod +x "$work/bin/gitleaks"
+    PATH="$work/bin:$PATH" status_is 2 scan_range --from "$base" --to "$clean"
+    printf '#!/bin/sh\necho "1:00PM ERR [git] fatal: bad revision"\necho "1:00PM INF 1 commits scanned."\n' >"$work/bin/gitleaks"
+    PATH="$work/bin:$PATH" status_is 2 scan_range --from "$base" --to "$clean"
+    # A path added by a merge commit is reported.
+    main_branch="$(git -C "$work/repo" branch --show-current)"
+    git -C "$work/repo" switch -q -c side
+    printf 's\n' >"$work/repo/s.txt"
+    commit_files
+    side="$tip"
+    git -C "$work/repo" switch -q "$main_branch"
+    git -C "$work/repo" merge -q --no-ff --no-commit side >/dev/null 2>&1
+    printf 'path: /%s/%s\n' home private-example >"$work/repo/merge.txt"
+    commit_files
+    status_is 1 scan_range --from "$side" --to "$tip"
+    ;;
   *) fail "unknown regression case" ;;
 esac
 echo "ok - $1"
