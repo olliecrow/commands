@@ -102,6 +102,8 @@ scan_push() {
 # Synthetic values are assembled at runtime and never printed.
 printf -v value '%s%s' abcd1234 efgh5678
 printf -v project '%s%s%s' sk- proj- abcdefghijklmnopqrstuvwxyz0123456789
+printf -v jwt '%s.%s.%s' eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9 eyJzdWIiOiJ0ZXN0In0 \
+  c2lnbmF0dXJlLWZvci10ZXN0cy1vbmx5LW5vdC1yZWFs
 case "${1:-}" in
   nul|attributes)
     init_repo
@@ -355,6 +357,43 @@ case "${1:-}" in
         PATH="$work/bin:/usr/bin:/bin" clean_text bash "$repo_root/scripts/security/check-sensitive-text.sh" "$work/input"
         ;;
     esac
+    ;;
+  jwt|jwt-staged|jwt-push)
+    if [[ "$1" == jwt ]]; then
+      printf 'Authorization: Bearer %s\n' "$jwt" >"$work/input"
+      blocked bash "$repo_root/scripts/security/check-sensitive-text.sh" "$work/input"
+      if grep -q "$jwt" "$work/stderr"; then fail "value was printed"; fi
+      # Dotted names and a token with no signature are not credentials.
+      printf '%s\n' com.example.package_name_here a.b.c eyJhbGciOiJIUzI1NiJ9.e30 eyJhbGci.e30.short >"$work/input"
+      clean_text bash "$repo_root/scripts/security/check-sensitive-text.sh" "$work/input"
+    else
+      init_repo
+      printf '%s\n' "$jwt" >"$work/repo/notes.txt"
+      if [[ "$1" == jwt-staged ]]; then
+        git -C "$work/repo" add .
+        blocked scan_staged
+      else
+        commit_files
+        blocked scan_push --from "$base" --to "$tip"
+      fi
+    fi
+    ;;
+  copy-jwt)
+    mkdir -p "$work/input"
+    printf 'keep body\n' >"$work/input/keep.txt"
+    printf 'session: %s\n' "$jwt" >"$work/input/notes.txt"
+    skipped_copy bash "$repo_root/scripts/llm_copy.sh" --save-path "$work/bundle" "$work/input"
+    grep -q 'keep body' "$work/bundle" || fail "safe file was dropped"
+    if grep -q "$jwt" "$work/bundle"; then fail "JWT was copied"; fi
+    grep -q "notes.txt" "$work/stderr" || fail "sensitive file was not named"
+    if grep -q "$jwt" "$work/stderr"; then fail "value was printed"; fi
+    ;;
+  token-formats)
+    for prefix in sk-ant-oat01- sk-ant-api03- github_pat_11 gho_ ghu_ ghs_ ghr_; do
+      printf '%s%s\n' "$prefix" abcdefghijklmnopqrstuvwxyz0123456789 >"$work/notes.txt"
+      blocked bash "$repo_root/scripts/security/check-sensitive-text.sh" "$work/notes.txt"
+      skipped_copy bash "$repo_root/scripts/llm_copy.sh" --save-path "$work/bundle" "$work/notes.txt"
+    done
     ;;
   *) fail "unknown regression case" ;;
 esac

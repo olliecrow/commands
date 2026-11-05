@@ -570,7 +570,7 @@ test_sensitive_text_policy
 test_push_range_policy
 
 regression_count=0
-for regression in nul attributes json project pem remote filename tag staged copy-names copy-json copy-project copy-pem notebook textconv clean clean-staged assignment-forms copy-skip copy-code utf16 nul-before latin1-clean latin1-direct config-root config-merge config-encoding nested-staged submodule-textconv; do
+for regression in nul attributes json project pem remote filename tag staged copy-names copy-json copy-project copy-pem notebook textconv clean clean-staged assignment-forms copy-skip copy-code utf16 nul-before latin1-clean latin1-direct config-root config-merge config-encoding nested-staged submodule-textconv jwt jwt-staged jwt-push copy-jwt token-formats; do
   bash "$repo_root/tests/regressions.sh" "$regression"
   regression_count=$((regression_count + 1))
 done
