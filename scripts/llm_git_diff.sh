@@ -40,7 +40,7 @@ Options:
 Notes:
   Script-specific options must appear before a standalone '--' separator.
   If the clipboard tool is missing, --save-path still saves the file.
-  External diff drivers are not run.
+  External diff drivers, textconv, and clean filters are not run.
 USAGE
 }
 
@@ -73,6 +73,22 @@ REPO_PATH="$(cd "$REPO_PATH" && pwd)"
 if ! git -C "$REPO_PATH" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   die "Not a Git repository (or inside one): $REPO_PATH"
 fi
+
+# Disable clean/process filters for both index creation and worktree diffs.
+# Query names only: filter commands can contain private data.
+SAFE_GIT=(git -C "$REPO_PATH")
+filter_names="$(git -C "$REPO_PATH" config --name-only --get-regexp '^filter\..*\.(clean|process|required)$')" || {
+  status=$?
+  [[ "$status" -eq 1 ]] || die "Unable to read filter configuration"
+}
+while IFS= read -r name; do
+  [[ -n "$name" ]] || continue
+  if [[ "$name" == *.required ]]; then
+    SAFE_GIT+=(-c "$name=false")
+  else
+    SAFE_GIT+=(-c "$name=")
+  fi
+done <<<"$filter_names"
 
 # Keep temporary files and the temporary index out of the user's repository.
 TEMP_INDEX_DIR=""
@@ -198,14 +214,39 @@ if [[ "$INCLUDE_UNTRACKED" -eq 1 ]]; then
     if [[ -f "$real_git_dir/index" ]]; then
       cp -p "$real_git_dir/index" "$TEMP_INDEX_FILE"
     fi
-    # git add runs any clean filter that the repo config sets for these files.
     if [[ "$STAGED_DIFF" -eq 1 ]]; then
-      GIT_INDEX_FILE="$TEMP_INDEX_FILE" git -C "$REPO_PATH" add -- "${UNTRACKED[@]}"
+      for f in "${UNTRACKED[@]}"; do
+        mode=100644
+        if [[ -L "$REPO_PATH/$f" ]]; then
+          # Preserve the symlink itself, including a trailing newline.
+          link_target="$(readlink "$REPO_PATH/$f"; printf '.')"
+          link_target="${link_target%.}"
+          link_target="${link_target%$'\n'}"
+          blob="$(printf '%s' "$link_target" | git -C "$REPO_PATH" hash-object -w --stdin)"
+          mode=120000
+        else
+          [[ ! -x "$REPO_PATH/$f" ]] || mode=100755
+          blob="$(git -C "$REPO_PATH" hash-object -w --no-filters -- "$f")"
+        fi
+        GIT_INDEX_FILE="$TEMP_INDEX_FILE" git -C "$REPO_PATH" update-index --add --cacheinfo "$mode" "$blob" "$f"
+      done
     else
-      GIT_INDEX_FILE="$TEMP_INDEX_FILE" git -C "$REPO_PATH" add -N -- "${UNTRACKED[@]}"
+      # Intent-to-add preserves new-file diff semantics. All filters are disabled.
+      GIT_INDEX_FILE="$TEMP_INDEX_FILE" "${SAFE_GIT[@]}" add -N -- "${UNTRACKED[@]}"
     fi
   fi
 fi
+
+SAFE_DIFF_ARGS=()
+flags_added=0
+for a in ${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}; do
+  if [[ "$a" == -- && "$flags_added" -eq 0 ]]; then
+    SAFE_DIFF_ARGS+=(--no-ext-diff --no-textconv)
+    flags_added=1
+  fi
+  SAFE_DIFF_ARGS+=("$a")
+done
+[[ "$flags_added" -eq 1 ]] || SAFE_DIFF_ARGS+=(--no-ext-diff --no-textconv)
 
 # Run the diff; pass through any extra args provided
 # Examples you can pass:
@@ -213,11 +254,11 @@ fi
 #   -- name/of/file
 #   COMMITA..COMMITB -- path/inside/repo
 if [[ -n "$TEMP_INDEX_FILE" ]]; then
-  GIT_INDEX_FILE="$TEMP_INDEX_FILE" git -C "$REPO_PATH" --no-pager diff --no-ext-diff ${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"} >"$TXT_FILE" || {
+  GIT_INDEX_FILE="$TEMP_INDEX_FILE" "${SAFE_GIT[@]}" --no-pager diff "${SAFE_DIFF_ARGS[@]}" >"$TXT_FILE" || {
     die "git diff failed"
   }
 else
-  git -C "$REPO_PATH" --no-pager diff --no-ext-diff ${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"} >"$TXT_FILE" || {
+  "${SAFE_GIT[@]}" --no-pager diff "${SAFE_DIFF_ARGS[@]}" >"$TXT_FILE" || {
     die "git diff failed"
   }
 fi

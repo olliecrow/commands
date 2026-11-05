@@ -105,6 +105,29 @@ case "${1:-}" in
     bash "$repo_root/scripts/clear_notebook_outputs.sh" "$work/tree/link.ipynb" >"$work/stdout" 2>"$work/stderr"
     cmp "$work/before" "$work/outside.ipynb" || fail "explicit symlink rewritten"
     ;;
+  textconv|clean|clean-staged)
+    init_repo
+    printf 'before\n' >"$work/repo/tracked.txt"
+    printf '*.txt diff=unsafe filter=unsafe\n' >"$work/repo/.gitattributes"
+    commit_files
+    git -C "$work/repo" config diff.unsafe.textconv "touch '$work/textconv-ran'"
+    git -C "$work/repo" config filter.unsafe.clean "touch '$work/clean-ran'; cat"
+    printf 'after\n' >"$work/repo/tracked.txt"
+    printf 'untracked content\n' >"$work/repo/new.txt"
+    git -C "$work/repo" diff --cached --raw >"$work/index-before"
+    args=()
+    [[ "$1" != clean-staged ]] || args+=(--staged)
+    bash "$repo_root/scripts/llm_git_diff.sh" "$work/repo" --save-path "$work/diff" ${args[@]+"${args[@]}"} >"$work/stdout" 2>"$work/stderr"
+    if [[ "$1" == textconv ]]; then
+      [[ ! -e "$work/textconv-ran" ]] || fail "textconv executed"
+      grep -q '+after' "$work/diff" || fail "tracked content missing"
+    else
+      [[ ! -e "$work/clean-ran" ]] || fail "clean filter executed"
+    fi
+    grep -q '+untracked content' "$work/diff" || fail "untracked content missing"
+    git -C "$work/repo" diff --cached --raw >"$work/index-after"
+    cmp "$work/index-before" "$work/index-after" || fail "real index changed"
+    ;;
   *) fail "unknown regression case" ;;
 esac
 echo "ok - $1"

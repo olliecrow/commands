@@ -558,7 +558,7 @@ test_multitail
 test_sensitive_text_policy
 test_push_range_policy
 
-for regression in nul attributes json project pem remote filename tag staged copy-names copy-json copy-project copy-pem notebook; do
+for regression in nul attributes json project pem remote filename tag staged copy-names copy-json copy-project copy-pem notebook textconv clean clean-staged; do
   bash "$repo_root/tests/regressions.sh" "$regression"
 done
 
