@@ -148,6 +148,8 @@ Run the behavior tests before sending a change.
 bash tests/run.sh
 ```
 
+The gitleaks tests run only when `gitleaks` is on `PATH`. CI requires them.
+
 If `pre-commit` is installed, install its hooks and run its current-tree
 checks. The pre-push hook scans only the commits pre-commit passes to it.
 See known limitations above. CI on `main` is the backstop.

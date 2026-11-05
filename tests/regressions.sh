@@ -17,6 +17,13 @@ skipped_copy() {
   [[ "$status" -eq 0 ]] || fail "expected the sensitive file to be skipped, got $status"
   grep -q "credential-like content" "$work/stderr" || fail "expected credential-like content"
 }
+# Run a command and require an exact exit status.
+status_is() {
+  local expected="$1" status=0
+  shift
+  "$@" >"$work/stdout" 2>"$work/stderr" || status=$?
+  [[ "$status" -eq "$expected" ]] || fail "expected status $expected, got $status: $*"
+}
 clean_text() {
   local status=0
   "$@" >"$work/stdout" 2>"$work/stderr" || status=$?
@@ -393,6 +400,26 @@ case "${1:-}" in
       printf '%s%s\n' "$prefix" abcdefghijklmnopqrstuvwxyz0123456789 >"$work/notes.txt"
       blocked bash "$repo_root/scripts/security/check-sensitive-text.sh" "$work/notes.txt"
       skipped_copy bash "$repo_root/scripts/llm_copy.sh" --save-path "$work/bundle" "$work/notes.txt"
+    done
+    ;;
+  gitleaks-paths)
+    # Paths are built at run time so this file does not trip the scanners.
+    users=Users
+    lower_users=users
+    home=home
+    mkdir -p "$work/tree"
+    scan_tree() {
+      printf 'path: %s\n' "$1" >"$work/tree/notes.txt"
+      gitleaks dir --no-banner --redact --config "$repo_root/.gitleaks.toml" "$work/tree"
+    }
+    for path in "/$home/private-example/app" "/$home/private-example" "/$home/userbob" \
+      "/$users/private-example" "/$users/YOUNG" "C:\\$users\\private-example" \
+      "c:\\$lower_users\\private-example" "/$home/user/a /$home/private-example/b" \
+      "/$users/YOU/a /$users/private-example"; do
+      status_is 1 scan_tree "$path"
+    done
+    for path in "/$home/user/app" "/$users/YOU/app" "C:\\$users\\YOU\\app" "D:\\$lower_users\\username"; do
+      status_is 0 scan_tree "$path"
     done
     ;;
   *) fail "unknown regression case" ;;

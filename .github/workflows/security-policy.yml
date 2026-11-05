@@ -22,9 +22,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Run script tests
-        run: bash tests/run.sh
-
       # Tools are downloaded, checked against a pinned SHA-256, and unpacked
       # outside the checkout.
       - name: Install shellcheck
@@ -61,6 +58,11 @@ jobs:
           tar -xzf "${archive}"
           install -m 0755 gitleaks "${RUNNER_TEMP}/bin/gitleaks"
           echo "${RUNNER_TEMP}/bin" >> "$GITHUB_PATH"
+
+      - name: Run script tests
+        env:
+          COMMANDS_TEST_REQUIRE_GITLEAKS: "1"
+        run: bash tests/run.sh
 
       - name: Scan pushed/PR commit range with gitleaks
         env:

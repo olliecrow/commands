@@ -575,4 +575,14 @@ for regression in nul attributes json project pem remote filename tag staged cop
   regression_count=$((regression_count + 1))
 done
 
+# These cases need gitleaks. CI installs it and sets COMMANDS_TEST_REQUIRE_GITLEAKS.
+if command -v gitleaks >/dev/null 2>&1; then
+  bash "$repo_root/tests/regressions.sh" gitleaks-paths
+  regression_count=$((regression_count + 1))
+elif [[ "${COMMANDS_TEST_REQUIRE_GITLEAKS:-}" == 1 ]]; then
+  fail "gitleaks is not on PATH"
+else
+  echo "skip - gitleaks tests (gitleaks is not on PATH)"
+fi
+
 echo "All $((passed + regression_count)) tests passed."
