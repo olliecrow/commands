@@ -59,12 +59,15 @@ seen = set()
 notebooks = []
 
 for root in paths:
+    if root.is_symlink() or any(parent.is_symlink() for parent in root.parents):
+        print(f"Warning: skipping symlink path '{root}'", file=sys.stderr)
+        continue
     if not root.exists():
         print(f"Warning: '{root}' does not exist; skipping", file=sys.stderr)
         continue
     if root.is_file():
         if root.suffix.lower() == ".ipynb":
-            resolved = root.resolve()
+            resolved = root.absolute()
             if resolved not in seen:
                 seen.add(resolved)
                 notebooks.append(resolved)
@@ -74,7 +77,10 @@ for root in paths:
         for nb in sorted(root.rglob("*.ipynb")):
             if any(part == ".ipynb_checkpoints" for part in nb.parts):
                 continue
-            resolved = nb.resolve()
+            if nb.is_symlink() or any(parent.is_symlink() for parent in nb.parents):
+                print(f"Warning: skipping symlink path '{nb}'", file=sys.stderr)
+                continue
+            resolved = nb.absolute()
             if resolved not in seen:
                 seen.add(resolved)
                 notebooks.append(resolved)

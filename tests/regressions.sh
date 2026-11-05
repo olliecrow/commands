@@ -95,6 +95,16 @@ case "${1:-}" in
     bash "$repo_root/scripts/llm_copy.sh" --allow-sensitive --save-path "$work/bundle" "$work/notes.txt" >"$work/stdout" 2>"$work/stderr"
     grep -q '# File:' "$work/bundle" || fail "content override failed"
     ;;
+  notebook)
+    mkdir -p "$work/tree"
+    printf '%s\n' '{"cells":[{"cell_type":"code","outputs":[1],"execution_count":1}]}' >"$work/outside.ipynb"
+    cp "$work/outside.ipynb" "$work/before"
+    ln -s "$work/outside.ipynb" "$work/tree/link.ipynb"
+    bash "$repo_root/scripts/clear_notebook_outputs.sh" "$work/tree" >"$work/stdout" 2>"$work/stderr"
+    cmp "$work/before" "$work/outside.ipynb" || fail "outside notebook rewritten"
+    bash "$repo_root/scripts/clear_notebook_outputs.sh" "$work/tree/link.ipynb" >"$work/stdout" 2>"$work/stderr"
+    cmp "$work/before" "$work/outside.ipynb" || fail "explicit symlink rewritten"
+    ;;
   *) fail "unknown regression case" ;;
 esac
 echo "ok - $1"
