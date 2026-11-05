@@ -4,10 +4,12 @@
 
 ## Requirements
 
-- macOS with Bash
+- Bash 3.2 or newer (the macOS `/bin/bash` works) on macOS or Linux
 - Git for the Git helpers
-- Python 3 for `clear_notebook_outputs.sh`
-- the built-in macOS clipboard tools for the LLM helpers
+- Python 3.8 or newer for `clear_notebook_outputs.sh`
+- for the LLM helpers: `pbcopy` for `--string`, `osascript` for the default
+  file-on-clipboard mode (both are built into macOS). `--save-path` works
+  without either tool, so on Linux use `--save-path`.
 
 ## Quick start
 
@@ -19,6 +21,8 @@ Run scripts directly from a clone of this repository.
 ```
 
 You can also add aliases that point to your clone.
+Note that `multitail` below is this repo's script, not the separate
+`multitail` program; the alias hides that program if it is installed.
 
 ```bash
 alias llm="/path/to/commands/scripts/llm_copy.sh"
@@ -40,6 +44,8 @@ autoload -Uz compinit && compinit
 
 Bash completion requires
 [bash-completion](https://github.com/scop/bash-completion).
+Completion is bound to the script file names (such as `llm_copy.sh`),
+not to aliases.
 
 ## Script reference
 
@@ -50,8 +56,12 @@ Bundle allowed files into one text artifact for sharing with LLM tools.
 - default mode copies a file reference to clipboard
 - `--string` copies raw text content
 - `--save-path` replaces the file at an explicit output path
-- respects `.gitignore` by default
-- excludes environment files from supported input
+- respects `.gitignore` by default (`--ignore-gitignore` turns this off)
+- includes only the file extensions and names listed in `--help`
+- skips paths with a hidden part (a name that starts with `.`), such as `.env`
+- skips common secret files such as `credentials.json` and `secrets.toml`
+- stops, and copies nothing, if the bundle contains a known token format
+  (GitHub, AWS, or OpenAI-style keys); `--allow-sensitive` overrides this
 
 Examples.
 
@@ -69,6 +79,7 @@ Generate a git diff and copy either the file artifact or plain text to clipboard
 - includes untracked files by default
 - use `--exclude-untracked` to skip untracked files
 - leaves the repository index unchanged
+- does not run external diff drivers from the Git config
 
 Examples.
 
@@ -80,10 +91,14 @@ Examples.
 
 ### `git_clean_branches.sh`
 
-Prune remotes and delete local branches already merged into the default branch.
+Fetch with `--prune` (this removes remote-tracking refs for branches deleted
+on the remote), then delete local branches already merged into the default
+branch. It never force-deletes, and keeps the current branch and branches
+checked out in other worktrees.
 
 ```bash
-./scripts/git_clean_branches.sh --help
+./scripts/git_clean_branches.sh --dry-run   # list only; no fetch or delete
+./scripts/git_clean_branches.sh
 ```
 
 ### `clear_notebook_outputs.sh`
@@ -102,8 +117,7 @@ Tail all regular files in a directory and include newly created files.
 
 ## Known limitations
 
-- Scripts are macOS-first and several commands rely on macOS clipboard tools.
-- Some scripts assume Git repositories or local CLI tooling is already installed.
+- The clipboard modes of the LLM helpers work on macOS only.
 - Completion definitions are static and may need updates when script options change.
 
 ## Documentation map
@@ -123,8 +137,10 @@ Run the behavior tests before sending a change.
 bash tests/run.sh
 ```
 
-If `pre-commit` is installed, run its current-tree checks too.
+If `pre-commit` is installed, install its hooks (they also scan each push
+for secrets and local paths) and run its current-tree checks.
 
 ```bash
+pre-commit install
 pre-commit run --all-files
 ```
