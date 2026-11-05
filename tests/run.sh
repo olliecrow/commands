@@ -145,6 +145,51 @@ test_llm_copy() {
   pass "deterministic LLM bundle output"
 }
 
+test_llm_copy_secrets() {
+  local work_dir="$test_root/llm-copy-secrets"
+  local input_dir="$work_dir/input"
+  local bin_dir="$work_dir/bin"
+  local output_file="$work_dir/bundle.txt"
+  local error_file="$work_dir/error.txt"
+  local token
+  mkdir -p "$input_dir"
+  make_clipboard_stub "$bin_dir"
+  printf -v token '%s%s' 'ghp_' 'abcdefghijklmnopqrstuvwxyz'
+
+  printf 'keep body\n' >"$input_dir/keep.txt"
+  printf 'credential body\n' >"$input_dir/credentials.json"
+  printf 'secret body\n' >"$input_dir/secrets.toml"
+  PATH="$bin_dir:/usr/bin:/bin" "$repo_root/scripts/llm_copy.sh" \
+    --string --save-path "$output_file" "$input_dir" >/dev/null 2>"$error_file"
+  assert_contains "$output_file" "keep body"
+  assert_not_contains "$output_file" "credential body"
+  assert_not_contains "$output_file" "secret body"
+  assert_contains "$error_file" "skipping credentials.json"
+
+  printf 'previous bundle\n' >"$output_file"
+  printf 'value: %s\n' "$token" >"$input_dir/notes.txt"
+  if PATH="$bin_dir:/usr/bin:/bin" "$repo_root/scripts/llm_copy.sh" \
+    --string --save-path "$output_file" "$input_dir" >/dev/null 2>"$error_file"; then
+    fail "bundle with a known token was copied"
+  fi
+  assert_contains "$output_file" "previous bundle"
+  assert_contains "$error_file" "notes.txt"
+  assert_not_contains "$error_file" "$token"
+  [[ -z "$(find "$work_dir" -name '.llm_bundle.*')" ]] ||
+    fail "blocked bundle left a temporary file"
+
+  PATH="$bin_dir:/usr/bin:/bin" "$repo_root/scripts/llm_copy.sh" --allow-sensitive \
+    --string --save-path "$output_file" "$input_dir" >/dev/null 2>&1 ||
+    fail "--allow-sensitive did not copy the bundle"
+  assert_contains "$output_file" "$token"
+
+  # This repository has no real token, so it must copy without the override.
+  PATH="$bin_dir:/usr/bin:/bin" "$repo_root/scripts/llm_copy.sh" \
+    --string --save-path "$output_file" "$repo_root" >/dev/null 2>&1 ||
+    fail "llm_copy blocked this repository"
+  pass "LLM bundle secret stops"
+}
+
 test_llm_copy_temp_files() {
   local work_dir="$test_root/llm-copy-temp"
   local bin_dir="$work_dir/bin"
@@ -448,6 +493,7 @@ test_push_range_policy() {
 test_help
 test_notebook_cleanup
 test_llm_copy
+test_llm_copy_secrets
 test_llm_copy_temp_files
 test_llm_git_diff
 test_branch_cleanup

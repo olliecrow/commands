@@ -10,10 +10,15 @@ set -euo pipefail
 # ---------------------------
 readonly ALLOWED_EXTENSIONS="txt md py json jsonl yaml yml js html sh rs toml cfg css ini rst c cc cpp h hpp cuh cu ts tsx jsx java rb go bat ps1 fish make cmake gradle"
 readonly ALLOWED_FILENAMES="Dockerfile Containerfile Imagefile Makefile Procfile Rakefile Gemfile Pipfile Brewfile Jenkinsfile Vagrantfile LICENSE COPYING NOTICE README CHANGES CHANGELOG VERSION"
+# Common secret files whose extension is otherwise allowed.
+readonly SECRET_FILENAMES="credentials.json credentials.yaml credentials.yml secrets.json secrets.yaml secrets.yml secrets.toml secrets.txt"
+# Keep in sync with known_token_regex in scripts/security/check-sensitive-text.sh.
+readonly KNOWN_TOKEN_REGEX='((ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9]{20,})'
 readonly HEADER_PREFIX="# File: "
 readonly TMP_BASENAME="llm_bundle"
 MODE="file"  # "file" (default) | "text"
 IGNORE_GITIGNORE="false"
+ALLOW_SENSITIVE="false"
 
 # ---------------------------
 # Helpers
@@ -33,7 +38,7 @@ usage() {
   fi
 
   cat >&"$output_fd" <<USAGE
-Usage: llm_copy.sh [--string] [--save-path <file>] <path> [path ...]
+Usage: llm_copy.sh [--string] [--save-path <file>] [--allow-sensitive] <path> [path ...]
 
   --string   Copy the PLAIN TEXT content to the macOS clipboard (not a file).
   --save-path <file>
@@ -43,9 +48,13 @@ Usage: llm_copy.sh [--string] [--save-path <file>] <path> [path ...]
              clipboard tool is missing, the file is still saved.
   --ignore-gitignore
              Ignore .gitignore filtering when gathering files.
+  --allow-sensitive
+             Copy the bundle even if it contains a known token format
+             (GitHub, AWS, or OpenAI-style keys). Without it, the run stops.
 
 The tool gathers files with $(allowed_inputs_text).
 Paths with a hidden component (a name that starts with ".") are skipped.
+These secret files are skipped: ${SECRET_FILENAMES// /, }.
 USAGE
   exit "$exit_code"
 }
@@ -135,6 +144,10 @@ process_file() {
   fi
 
   is_allowed_file "$file" || return 0
+  if [[ " $SECRET_FILENAMES " == *" ${file##*/} "* ]]; then
+    echo "warning: skipping $display_path (looks like a secrets file)" >&2
+    return 0
+  fi
   {
     printf "%s%s\n" "$HEADER_PREFIX" "$rel_path"
     cat "$file"
@@ -164,6 +177,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --ignore-gitignore)
       IGNORE_GITIGNORE="true"
+      shift
+      ;;
+    --allow-sensitive)
+      ALLOW_SENSITIVE="true"
       shift
       ;;
     -h|--help)
@@ -270,6 +287,31 @@ for TARGET_PATH in "${paths[@]}"; do
     echo "Warning: '$TARGET_PATH' does not exist or is not a file/directory" >&2
   fi
 done
+
+# ---------------------------
+# Stop on known token formats
+# ---------------------------
+# Print the bundle files that contain a token match. Only names are printed.
+report_token_files() {
+  grep -anE -e "^${HEADER_PREFIX}" -e "$KNOWN_TOKEN_REGEX" -- "$1" |
+    awk -v prefix="$HEADER_PREFIX" '{
+      sub(/^[0-9]+:/, "")
+      if (index($0, prefix) == 1) { current = substr($0, length(prefix) + 1); next }
+      if (current != last) { print "  " current; last = current }
+    }' >&2 || true
+}
+
+if [[ "$ALLOW_SENSITIVE" != "true" && -s "$TMP_FILE" ]]; then
+  token_status=0
+  grep -aqE -e "$KNOWN_TOKEN_REGEX" -- "$TMP_FILE" || token_status=$?
+  if [[ "$token_status" -eq 0 ]]; then
+    echo "Error: the bundle contains a known token format in:" >&2
+    report_token_files "$TMP_FILE"
+    die "nothing was copied or saved; remove the token or pass --allow-sensitive"
+  elif [[ "$token_status" -gt 1 ]]; then
+    die "unable to scan the bundle for tokens"
+  fi
+fi
 
 # ---------------------------
 # Copy to clipboard
