@@ -28,8 +28,11 @@ need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Required command not found:
 watched_files=()
 tail_processes=()
 
+# Bash 3.2 (macOS /bin/bash) treats "${empty[@]}" as unbound under set -u,
+# so check the array length first.
 cleanup() {
   local process_id
+  [[ ${#tail_processes[@]} -gt 0 ]] || return 0
   for process_id in "${tail_processes[@]}"; do
     kill "$process_id" >/dev/null 2>&1 || true
   done
@@ -39,6 +42,7 @@ cleanup() {
 is_watched() {
   local candidate="$1"
   local index
+  [[ ${#watched_files[@]} -gt 0 ]] || return 1
   for index in "${!watched_files[@]}"; do
     if [[ "${watched_files[$index]}" == "$candidate" ]] &&
       kill -0 "${tail_processes[$index]}" >/dev/null 2>&1; then
@@ -84,7 +88,7 @@ main() {
     for file in "$log_dir"/*; do
       [[ -f "$file" ]] || continue
       if ! is_watched "$file"; then
-        tail "${TAIL_ARGS[@]}" "$file" &
+        tail "${TAIL_ARGS[@]}" -- "$file" &
         watched_files+=("$file")
         tail_processes+=("$!")
       fi

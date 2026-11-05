@@ -4,8 +4,13 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 test_root="$(mktemp -d -t commands_tests.XXXXXX)"
 passed=0
+watcher_pid=""
 
 cleanup() {
+  if [[ -n "$watcher_pid" ]]; then
+    kill -TERM "$watcher_pid" >/dev/null 2>&1 || true
+    wait "$watcher_pid" 2>/dev/null || true
+  fi
   rm -rf -- "$test_root"
 }
 trap cleanup EXIT
@@ -326,27 +331,43 @@ test_branch_cleanup() {
   pass "safe merged-branch cleanup"
 }
 
+# Append a line to a file until it shows up in the output, for up to 5s.
+# tail -n0 skips lines written before it opens the file, so one write is
+# not enough.
+append_until_seen() {
+  local log_file="$1" line="$2" output_file="$3" attempts=0
+  while [[ "$attempts" -lt 50 ]]; do
+    printf '%s\n' "$line" >>"$log_file"
+    grep -Fq -- "$line" "$output_file" && return 0
+    attempts=$((attempts + 1))
+    sleep 0.1
+  done
+  fail "'$line' did not appear in multitail output"
+}
+
 test_multitail() {
   local work_dir="$test_root/multitail"
-  local logs_dir="$work_dir/logs"
+  # A leading "-" checks that tail gets the file names after "--".
+  local logs_dir="-logs"
   local output_file="$work_dir/output.txt"
-  mkdir -p "$logs_dir"
-  : >"$logs_dir/first file.log"
+  mkdir -p "$work_dir/$logs_dir"
+  : >"$work_dir/$logs_dir/first file.log"
 
-  "$repo_root/scripts/multitail.sh" "$logs_dir" >"$output_file" 2>&1 &
-  local watcher_pid=$!
-  sleep 0.3
-  printf 'first event\n' >>"$logs_dir/first file.log"
-  sleep 1.2
-  : >"$logs_dir/second.log"
-  sleep 1.2
-  printf 'second event\n' >>"$logs_dir/second.log"
-  sleep 0.3
+  (
+    cd "$work_dir"
+    exec "$repo_root/scripts/multitail.sh" "$logs_dir"
+  ) >"$output_file" 2>&1 &
+  watcher_pid=$!
+
+  append_until_seen "$work_dir/$logs_dir/first file.log" "first event" "$output_file"
+  : >"$work_dir/$logs_dir/second.log"
+  append_until_seen "$work_dir/$logs_dir/second.log" "second event" "$output_file"
+
   kill -TERM "$watcher_pid" >/dev/null 2>&1 || true
   wait "$watcher_pid" 2>/dev/null || true
-
-  assert_contains "$output_file" "first event"
-  assert_contains "$output_file" "second event"
+  watcher_pid=""
+  assert_not_contains "$output_file" "unbound variable"
+  assert_not_contains "$output_file" "usage"
   pass "multitail process ownership"
 }
 
