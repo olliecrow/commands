@@ -6,26 +6,39 @@ set -euo pipefail
 die() { echo "Error: $*" >&2; exit 1; }
 usage() {
   cat <<'USAGE'
-Usage: git_clean_branches.sh
+Usage: git_clean_branches.sh [-n | --dry-run]
 
-Prune stale remote tracking references and delete local branches already merged
-into the default branch.
+Run inside a Git repository. It:
+- runs "git fetch --prune --all", which removes remote-tracking refs for
+  branches deleted on the remote
+- deletes local branches already merged into the default branch (and,
+  when a remote exists, into its copy on the remote)
 
-This command is non-interactive. It never uses force-delete.
+It never force-deletes. It keeps the default branch, the current branch,
+and branches checked out in other worktrees. If the current HEAD does not
+contain a branch, git refuses the delete and the branch is skipped.
+
+  -n, --dry-run  List the branches that would be deleted. Does not fetch,
+                 prune, or delete, so it uses the remote refs as they are.
 USAGE
 }
 
+dry_run=0
 if [[ $# -eq 1 ]]; then
   case "$1" in
     -h|--help)
       usage
       exit 0
       ;;
+    -n|--dry-run)
+      dry_run=1
+      shift
+      ;;
   esac
 fi
 
 if [[ $# -ne 0 ]]; then
-  die "usage: $(basename "$0")"
+  die "usage: $(basename "$0") [-n | --dry-run]"
 fi
 
 # Ensure we're in a git repo
@@ -43,7 +56,7 @@ if [[ -n "$remotes" ]]; then
 fi
 
 # Prune remotes if any exist
-if [[ "$has_remotes" -eq 1 ]]; then
+if [[ "$has_remotes" -eq 1 && "$dry_run" -eq 0 ]]; then
   if ! git fetch --prune --all; then
     die "Failed to fetch remotes; aborting to avoid deleting with stale refs"
   fi
@@ -171,6 +184,13 @@ done
 
 if [[ ${#to_delete[@]} -eq 0 ]]; then
   echo "No branches eligible for deletion."
+  exit 0
+fi
+
+if [[ "$dry_run" -eq 1 ]]; then
+  for b in "${to_delete[@]}"; do
+    echo "Would delete $b"
+  done
   exit 0
 fi
 

@@ -336,6 +336,24 @@ test_branch_cleanup() {
   git -C "$repo_dir" commit -q -m "Add unmerged work"
   git -C "$repo_dir" switch -q main
 
+  local dry_run_output="$test_root/branches-dry-run.txt"
+  (
+    cd "$repo_dir"
+    "$repo_root/scripts/git_clean_branches.sh" --dry-run >"$dry_run_output"
+  )
+  assert_contains "$dry_run_output" "Would delete merged"
+  assert_not_contains "$dry_run_output" "unmerged"
+  git -C "$repo_dir" show-ref --verify --quiet refs/heads/merged ||
+    fail "dry run deleted a branch"
+
+  # A dry run must not contact remotes, so a missing remote is not an error.
+  git -C "$repo_dir" remote add origin "$test_root/missing-remote"
+  (
+    cd "$repo_dir"
+    "$repo_root/scripts/git_clean_branches.sh" --dry-run >/dev/null 2>&1
+  ) || fail "dry run tried to fetch"
+  git -C "$repo_dir" remote remove origin
+
   (
     cd "$repo_dir"
     "$repo_root/scripts/git_clean_branches.sh" >/dev/null
