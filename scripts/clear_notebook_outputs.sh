@@ -26,7 +26,7 @@ need_cmd() {
 }
 
 if [[ $# -eq 0 ]]; then
-  usage
+  usage >&2
   exit 1
 fi
 
@@ -98,7 +98,7 @@ for nb in notebooks:
     pretty = display_path(nb)
     try:
         raw = nb.read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         print(f"Error: failed to read {pretty}: {exc}", file=sys.stderr)
         failures = True
         continue

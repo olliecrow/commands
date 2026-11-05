@@ -98,6 +98,24 @@ PY
   "$repo_root/scripts/clear_notebook_outputs.sh" "$notebook" >/dev/null
   after="$(cksum "$notebook")"
   [[ "$before" == "$after" ]] || fail "notebook cleanup was not idempotent"
+
+  # One unreadable notebook must not stop the others.
+  local bad_notebook="$work_dir/a-bad.ipynb" error_file="$work_dir/error.txt"
+  printf '\377\376 not utf-8\n' >"$bad_notebook"
+  printf '%s\n' \
+    '{"cells":[{"cell_type":"code","execution_count":1,"outputs":[{"output_type":"stream","text":["x"]}],"source":["x"]}],"metadata":{},"nbformat":4,"nbformat_minor":5}' \
+    >"$work_dir/b-good.ipynb"
+  if "$repo_root/scripts/clear_notebook_outputs.sh" "$work_dir" >/dev/null 2>"$error_file"; then
+    fail "a bad notebook did not make the run fail"
+  fi
+  assert_contains "$error_file" "failed to read"
+  assert_not_contains "$error_file" "Traceback"
+  assert_contains "$work_dir/b-good.ipynb" '"outputs": []'
+
+  if "$repo_root/scripts/clear_notebook_outputs.sh" >/dev/null 2>"$error_file"; then
+    fail "missing path argument was accepted"
+  fi
+  assert_contains "$error_file" "Usage:"
   pass "atomic notebook cleanup"
 }
 
