@@ -61,8 +61,9 @@ Bundle allowed files into one text artifact for sharing with LLM tools.
 - skips paths with a hidden part (a name that starts with `.`), such as `.env`
 - skips secret-like names without regard to case: `*secret*`, `*credential*`,
   `*.pem`, `*.key`, SSH private-key names, `.env*`, and `aws.ini`
-- stops before copying or saving credential-like assignments, private-key
-  headers, or GitHub, AWS, and OpenAI-style keys (including project keys)
+- skips a file that contains a credential-like assignment, a private-key
+  header, or a GitHub, AWS, or OpenAI-style key (including project keys),
+  and prints that file's name. The rest of the bundle is still copied
 - `--allow-sensitive` overrides secret-name and content checks; the normal
   file type and hidden-path rules still apply
 

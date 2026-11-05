@@ -4,8 +4,26 @@ repo_root="${COMMANDS_TEST_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd
 work="$(mktemp -d "${TMPDIR:-/tmp}/commands_regressions.XXXXXX")"
 trap 'rm -rf -- "$work"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
+# A crash or a usage error is not a block. Require the policy exit and text.
 blocked() {
-  if "$@" >"$work/stdout" 2>"$work/stderr"; then fail "sensitive input passed"; fi
+  local status=0
+  "$@" >"$work/stdout" 2>"$work/stderr" || status=$?
+  [[ "$status" -eq 1 ]] || fail "expected status 1, got $status"
+  grep -q "policy violation" "$work/stderr" || fail "expected a policy violation"
+}
+skipped_copy() {
+  local status=0
+  "$@" >"$work/stdout" 2>"$work/stderr" || status=$?
+  [[ "$status" -eq 0 ]] || fail "expected the sensitive file to be skipped, got $status"
+  grep -q "credential-like content" "$work/stderr" || fail "expected credential-like content"
+}
+clean_text() {
+  local status=0
+  "$@" >"$work/stdout" 2>"$work/stderr" || status=$?
+  [[ "$status" -eq 0 ]] || fail "expected a clean scan, got $status"
+  if grep -q "policy violation" "$work/stderr"; then
+    fail "clean input was blocked"
+  fi
 }
 init_repo() {
   mkdir -p "$work/repo"
@@ -27,7 +45,7 @@ scan_push() {
   (cd "$work/repo" && bash "$repo_root/scripts/security/check-push-range.sh" "$@")
 }
 # Synthetic values are assembled at runtime and never printed.
-printf -v value '%s%s' abcdefgh ijklmnop
+printf -v value '%s%s' abcd1234 efgh5678
 printf -v project '%s%s%s' sk- proj- abcdefghijklmnopqrstuvwxyz0123456789
 case "${1:-}" in
   nul|attributes)
@@ -90,8 +108,8 @@ case "${1:-}" in
       copy-pem) printf '%s%s\n' '-----BEGIN OPENSSH ' 'PRIVATE KEY-----' >"$work/notes.txt" ;;
     esac
     printf 'previous bundle\n' >"$work/bundle"
-    blocked bash "$repo_root/scripts/llm_copy.sh" --save-path "$work/bundle" "$work/notes.txt"
-    grep -qx 'previous bundle' "$work/bundle" || fail "output changed on failure"
+    skipped_copy bash "$repo_root/scripts/llm_copy.sh" --save-path "$work/bundle" "$work/notes.txt"
+    grep -qx 'previous bundle' "$work/bundle" || fail "output changed while skipping"
     bash "$repo_root/scripts/llm_copy.sh" --allow-sensitive --save-path "$work/bundle" "$work/notes.txt" >"$work/stdout" 2>"$work/stderr"
     grep -q '# File:' "$work/bundle" || fail "content override failed"
     ;;
@@ -127,6 +145,44 @@ case "${1:-}" in
     grep -q '+untracked content' "$work/diff" || fail "untracked content missing"
     git -C "$work/repo" diff --cached --raw >"$work/index-after"
     cmp "$work/index-before" "$work/index-after" || fail "real index changed"
+    ;;
+  assignment-forms)
+    printf -v shaped '%s%s' abcd1234 efgh5678
+    printf -v letters '%s%s' abcdefgh ijklmnop
+    printf 'SECRET_KEY = "%s"\n' "$shaped" >"$work/input"
+    blocked bash "$repo_root/scripts/security/check-sensitive-text.sh" "$work/input"
+    printf 'aws_secret_access_key = %s\n' "$shaped" >"$work/input"
+    blocked bash "$repo_root/scripts/security/check-sensitive-text.sh" "$work/input"
+    printf 'private_key = "%s"\n' "$shaped" >"$work/input"
+    blocked bash "$repo_root/scripts/security/check-sensitive-text.sh" "$work/input"
+    printf 'db_passwd: %s\n' "$shaped" >"$work/input"
+    blocked bash "$repo_root/scripts/security/check-sensitive-text.sh" "$work/input"
+    printf 'auth_token = _github_auth_token(request)\n' >"$work/input"
+    clean_text bash "$repo_root/scripts/security/check-sensitive-text.sh" "$work/input"
+    printf 'token = func(x)\n' >"$work/input"
+    clean_text bash "$repo_root/scripts/security/check-sensitive-text.sh" "$work/input"
+    printf 'api_key=%s\n' "$letters" >"$work/input"
+    clean_text bash "$repo_root/scripts/security/check-sensitive-text.sh" "$work/input"
+    ;;
+  copy-skip|copy-code)
+    if [[ "$1" == copy-code ]]; then
+      printf 'auth_token = _github_auth_token(request)\n' >"$work/notes.py"
+      bash "$repo_root/scripts/llm_copy.sh" --save-path "$work/bundle" "$work/notes.py" >"$work/stdout" 2>"$work/stderr"
+      grep -q 'auth_token = _github_auth_token(request)' "$work/bundle" || fail "ordinary code was not copied"
+      if grep -q "credential-like content" "$work/stderr"; then
+        fail "ordinary code was flagged"
+      fi
+    else
+      mkdir -p "$work/input"
+      printf 'keep body\n' >"$work/input/keep.txt"
+      printf 'api_key=%s\n' "$value" >"$work/input/notes.txt"
+      bash "$repo_root/scripts/llm_copy.sh" --save-path "$work/bundle" "$work/input" >"$work/stdout" 2>"$work/stderr"
+      grep -q 'keep body' "$work/bundle" || fail "safe file was dropped"
+      if grep -q "$value" "$work/bundle"; then fail "sensitive file was copied"; fi
+      grep -q "credential-like content" "$work/stderr" || fail "expected credential-like content"
+      grep -q "notes.txt" "$work/stderr" || fail "sensitive file was not named"
+      if grep -q "$value" "$work/stderr"; then fail "value was printed"; fi
+    fi
     ;;
   *) fail "unknown regression case" ;;
 esac

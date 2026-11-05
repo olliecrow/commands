@@ -11,7 +11,7 @@ set -euo pipefail
 readonly ALLOWED_EXTENSIONS="txt md py json jsonl yaml yml js html sh rs toml cfg css ini rst c cc cpp h hpp cuh cu ts tsx jsx java rb go bat ps1 fish make cmake gradle"
 readonly ALLOWED_FILENAMES="Dockerfile Containerfile Imagefile Makefile Procfile Rakefile Gemfile Pipfile Brewfile Jenkinsfile Vagrantfile LICENSE COPYING NOTICE README CHANGES CHANGELOG VERSION"
 # Keep content patterns in sync with scripts/security/check-sensitive-text.sh.
-readonly SECRET_ASSIGNMENT_REGEX='([Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Tt][Oo][Kk][Ee][Nn]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Ss][Ee][Cc][Rr][Ee][Tt])["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_./+=-]{12,}'
+readonly SECRET_ASSIGNMENT_REGEX='([Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Tt][Oo][Kk][Ee][Nn]|[Pp][Aa][Ss][Ss]([Ww][Oo][Rr][Dd]|[Ww][Dd])|[Ss][Ee][Cc][Rr][Ee][Tt]([_-]?([Aa][Cc][Cc][Ee][Ss][Ss][_-]?)?[Kk][Ee][Yy])?|[Pp][Rr][Ii][Vv][Aa][Tt][Ee][_-]?[Kk][Ee][Yy])["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_./+=-]{4,}[0-9+/=][A-Za-z0-9_./+=-]{4,}(["'"'"'`,;)}[:space:]]|$)'
 readonly KNOWN_TOKEN_REGEX='((ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,})'
 readonly PRIVATE_KEY_REGEX='-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY-----'
 readonly HEADER_PREFIX="# File: "
@@ -49,13 +49,15 @@ Usage: llm_copy.sh [--string] [--save-path <file>] [--allow-sensitive] <path> [p
   --ignore-gitignore
              Ignore .gitignore filtering when gathering files.
   --allow-sensitive
-             Include secret-like filenames and content. Without it, secret
-             names are skipped and credential-like content stops the run.
+             Include secret-like filenames and content. Without it, those
+             files are skipped and named in a warning. The rest are copied.
 
 The tool gathers files with $(allowed_inputs_text).
 Paths with a hidden component (a name that starts with ".") are skipped.
 Secret-like names are skipped (case-insensitive): *secret*, *credential*,
 *.pem, *.key, id_rsa*, id_ed25519*, id_ecdsa*, id_dsa*, .env*, aws.ini.
+A file whose content matches a credential is skipped and named. The rest
+of the bundle is still written. --allow-sensitive includes both.
 USAGE
   exit "$exit_code"
 }
@@ -155,11 +157,45 @@ process_file() {
     esac
   fi
   is_allowed_file "$file" || return 0
+  included_abs+=("$file")
+  included_rel+=("$rel_path")
+  write_file_section "$file" "$rel_path"
+}
+
+write_file_section() {
+  local file="$1" rel_path="$2"
   {
     printf "%s%s\n" "$HEADER_PREFIX" "$rel_path"
     cat "$file"
     printf "\n"
   } >>"$TMP_FILE"
+}
+
+# Return 0 when the bundle text matches a credential pattern, 1 when it
+# does not, and 2 when the scan itself fails.
+bundle_has_sensitive_content() {
+  local status=0
+  grep -aqE -e "$KNOWN_TOKEN_REGEX" -e "$SECRET_ASSIGNMENT_REGEX" -e "$PRIVATE_KEY_REGEX" -- "$1" || status=$?
+  if [[ "$status" -gt 1 ]]; then
+    return 2
+  fi
+  [[ "$status" -eq 0 ]]
+}
+
+# Print the bundle paths whose content matched. Names only, never values.
+sensitive_paths_in_bundle() {
+  grep -anE -e "^${HEADER_PREFIX}" -e "$KNOWN_TOKEN_REGEX" -e "$SECRET_ASSIGNMENT_REGEX" -e "$PRIVATE_KEY_REGEX" -- "$1" |
+    awk -v prefix="$HEADER_PREFIX" '{
+      sub(/^[0-9]+:/, "")
+      if (index($0, prefix) == 1) {
+        current = substr($0, length(prefix) + 1)
+        next
+      }
+      if (current != "" && current != last) {
+        print current
+        last = current
+      }
+    }'
 }
 
 # ---------------------------
@@ -227,9 +263,13 @@ fi
 # Build into a temporary file. A requested save path is replaced only after the
 # bundle is complete, so a failed run does not damage an existing file.
 CLEANUP_BUILD_FILE=1
+HITS_FILE=""
 cleanup() {
   if [[ "$CLEANUP_BUILD_FILE" -eq 1 && -n "${BUILD_FILE:-}" ]]; then
     rm -f -- "$BUILD_FILE"
+  fi
+  if [[ -n "${HITS_FILE:-}" ]]; then
+    rm -f -- "$HITS_FILE"
   fi
 }
 trap cleanup EXIT
@@ -249,6 +289,8 @@ TMP_FILE="$BUILD_FILE"
 # ---------------------------
 # Build bundle
 # ---------------------------
+included_abs=()
+included_rel=()
 for TARGET_PATH in "${paths[@]}"; do
   if [[ -f "$TARGET_PATH" ]]; then
     ROOT="$(dirname "$TARGET_PATH")"
@@ -296,27 +338,42 @@ for TARGET_PATH in "${paths[@]}"; do
 done
 
 # ---------------------------
-# Stop on credential-like content
+# Skip credential-like content
 # ---------------------------
-# Print the bundle files that contain a token match. Only names are printed.
-report_token_files() {
-  grep -anE -e "^${HEADER_PREFIX}" -e "$KNOWN_TOKEN_REGEX" -e "$SECRET_ASSIGNMENT_REGEX" -e "$PRIVATE_KEY_REGEX" -- "$1" |
-    awk -v prefix="$HEADER_PREFIX" '{
-      sub(/^[0-9]+:/, "")
-      if (index($0, prefix) == 1) { current = substr($0, length(prefix) + 1); next }
-      if (current != last) { print "  " current; last = current }
-    }' >&2 || true
-}
-
+# Drop only the files that matched. If a match cannot be removed, keep the
+# previous output and stop. Values are never printed.
 if [[ "$ALLOW_SENSITIVE" != "true" && -s "$TMP_FILE" ]]; then
-  token_status=0
-  grep -aqE -e "$KNOWN_TOKEN_REGEX" -e "$SECRET_ASSIGNMENT_REGEX" -e "$PRIVATE_KEY_REGEX" -- "$TMP_FILE" || token_status=$?
-  if [[ "$token_status" -eq 0 ]]; then
-    echo "Error: the bundle contains credential-like content in:" >&2
-    report_token_files "$TMP_FILE"
-    die "nothing was copied or saved; remove the sensitive content or pass --allow-sensitive"
-  elif [[ "$token_status" -gt 1 ]]; then
-    die "unable to scan the bundle for tokens"
+  sensitive_status=0
+  bundle_has_sensitive_content "$TMP_FILE" || sensitive_status=$?
+  if [[ "$sensitive_status" -eq 0 ]]; then
+    HITS_FILE="$(mktemp "${TMPDIR:-/tmp}/${TMP_BASENAME}.hits.XXXXXX")"
+    sensitive_paths_in_bundle "$TMP_FILE" >"$HITS_FILE"
+    if [[ ! -s "$HITS_FILE" ]]; then
+      die "credential-like content was found, but the file could not be named; nothing was copied or saved"
+    fi
+    while IFS= read -r sensitive_rel || [[ -n "${sensitive_rel:-}" ]]; do
+      [[ -n "$sensitive_rel" ]] || continue
+      echo "warning: skipping $sensitive_rel (credential-like content)" >&2
+    done <"$HITS_FILE"
+    : >"$TMP_FILE"
+    included_index=0
+    while [[ "$included_index" -lt ${#included_rel[@]} ]]; do
+      if ! grep -Fxq -- "${included_rel[$included_index]}" "$HITS_FILE"; then
+        write_file_section "${included_abs[$included_index]}" "${included_rel[$included_index]}"
+      fi
+      included_index=$((included_index + 1))
+    done
+    if [[ -s "$TMP_FILE" ]]; then
+      sensitive_status=0
+      bundle_has_sensitive_content "$TMP_FILE" || sensitive_status=$?
+      if [[ "$sensitive_status" -eq 0 ]]; then
+        die "credential-like content remained after skipping files; nothing was copied or saved"
+      elif [[ "$sensitive_status" -gt 1 ]]; then
+        die "unable to scan the bundle for credential-like content"
+      fi
+    fi
+  elif [[ "$sensitive_status" -gt 1 ]]; then
+    die "unable to scan the bundle for credential-like content"
   fi
 fi
 

@@ -189,17 +189,23 @@ test_llm_copy_secrets() {
   assert_not_contains "$output_file" "secret body"
   assert_contains "$error_file" "skipping credentials.json"
 
-  printf 'previous bundle\n' >"$output_file"
   printf 'value: %s\n' "$token" >"$input_dir/notes.txt"
-  if PATH="$bin_dir:/usr/bin:/bin" "$repo_root/scripts/llm_copy.sh" \
-    --string --save-path "$output_file" "$input_dir" >/dev/null 2>"$error_file"; then
-    fail "bundle with a known token was copied"
-  fi
-  assert_contains "$output_file" "previous bundle"
+  PATH="$bin_dir:/usr/bin:/bin" "$repo_root/scripts/llm_copy.sh" \
+    --string --save-path "$output_file" "$input_dir" >/dev/null 2>"$error_file" ||
+    fail "safe files were refused because another file was sensitive"
+  assert_contains "$output_file" "keep body"
+  assert_not_contains "$output_file" "$token"
   assert_contains "$error_file" "notes.txt"
+  assert_contains "$error_file" "credential-like content"
   assert_not_contains "$error_file" "$token"
   [[ -z "$(find "$work_dir" -name '.llm_bundle.*')" ]] ||
-    fail "blocked bundle left a temporary file"
+    fail "skipped bundle left a temporary file"
+
+  printf 'previous bundle\n' >"$output_file"
+  PATH="$bin_dir:/usr/bin:/bin" "$repo_root/scripts/llm_copy.sh" \
+    --string --save-path "$output_file" "$input_dir/notes.txt" >/dev/null 2>"$error_file" ||
+    fail "skipping the only sensitive file failed"
+  assert_contains "$output_file" "previous bundle"
 
   PATH="$bin_dir:/usr/bin:/bin" "$repo_root/scripts/llm_copy.sh" --allow-sensitive \
     --string --save-path "$output_file" "$input_dir" >/dev/null 2>&1 ||
@@ -210,7 +216,7 @@ test_llm_copy_secrets() {
   PATH="$bin_dir:/usr/bin:/bin" "$repo_root/scripts/llm_copy.sh" \
     --string --save-path "$output_file" "$repo_root" >/dev/null 2>&1 ||
     fail "llm_copy blocked this repository"
-  pass "LLM bundle secret stops"
+  pass "LLM bundle skips secret files"
 }
 
 test_llm_copy_temp_files() {
@@ -558,7 +564,7 @@ test_multitail
 test_sensitive_text_policy
 test_push_range_policy
 
-for regression in nul attributes json project pem remote filename tag staged copy-names copy-json copy-project copy-pem notebook textconv clean clean-staged; do
+for regression in nul attributes json project pem remote filename tag staged copy-names copy-json copy-project copy-pem notebook textconv clean clean-staged assignment-forms copy-skip copy-code; do
   bash "$repo_root/tests/regressions.sh" "$regression"
 done
 
