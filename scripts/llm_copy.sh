@@ -85,6 +85,17 @@ is_allowed_file() {
   fi
 }
 
+# Match secret-like names without regard to case and without a subprocess.
+is_secret_name() {
+  local status=1
+  shopt -s nocasematch
+  case "$1" in
+    *secret*|*credential*|*.pem|*.key|id_rsa*|id_ed25519*|id_ecdsa*|id_dsa*|.env*|aws.ini) status=0 ;;
+  esac
+  shopt -u nocasematch
+  return "$status"
+}
+
 # True if any path component starts with ".".
 has_hidden_component() {
   [[ "/$1" == */.* ]]
@@ -146,17 +157,11 @@ process_file() {
     fi
   fi
 
-  local folded_base
-  folded_base="$(printf '%s' "${file##*/}" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
-  if [[ "$ALLOW_SENSITIVE" != "true" ]]; then
-    case "$folded_base" in
-      *secret*|*credential*|*.pem|*.key|id_rsa*|id_ed25519*|id_ecdsa*|id_dsa*|.env*|aws.ini)
-        echo "warning: skipping $display_path (looks like a secrets file)" >&2
-        return 0
-        ;;
-    esac
-  fi
   is_allowed_file "$file" || return 0
+  if [[ "$ALLOW_SENSITIVE" != "true" ]] && is_secret_name "${file##*/}"; then
+    echo "warning: skipping $display_path (looks like a secrets file)" >&2
+    return 0
+  fi
   included_abs+=("$file")
   included_rel+=("$rel_path")
   write_file_section "$file" "$rel_path"
