@@ -436,12 +436,17 @@ test_sensitive_text_policy() {
   assert_not_contains "$error_file" "$work_dir"
 
   # Build the paths at run time so this file does not trip the scanners.
-  local blocked_path users="Users" home="home"
+  local blocked_path users="Users" home="home" windows_users="users"
+  printf 'path: C:\\%s\\YOU\n' "$windows_users" >"$mixed_path_file"
+  bash "$repo_root/scripts/security/check-sensitive-text.sh" \
+    --context=path-test "$mixed_path_file" >/dev/null 2>"$error_file" ||
+    fail "Windows placeholder path was blocked"
   for blocked_path in \
     "/$users/YOU /$users/private-example" \
     "/$users/YOUNG" \
     "/$home/username2" \
-    "C:\\$users\\private-example"; do
+    "C:\\$users\\private-example" \
+    "C:\\$windows_users\\private-example"; do
     printf 'path: %s\n' "$blocked_path" >"$mixed_path_file"
     if bash "$repo_root/scripts/security/check-sensitive-text.sh" \
       --context=path-test "$mixed_path_file" >/dev/null 2>&1; then
