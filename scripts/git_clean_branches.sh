@@ -18,8 +18,9 @@ It never force-deletes. It keeps the default branch, the current branch,
 and branches checked out in other worktrees. If the current HEAD does not
 contain a branch, git refuses the delete and the branch is skipped.
 
-  -n, --dry-run  List the branches that would be deleted. Does not fetch,
-                 prune, or delete, so it uses the remote refs as they are.
+  -n, --dry-run  List the branches the real run would try to delete. Does
+                 not fetch, prune, or delete, so it uses the remote refs as
+                 they are.
 USAGE
 }
 
