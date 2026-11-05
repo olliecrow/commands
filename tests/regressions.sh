@@ -239,6 +239,24 @@ case "${1:-}" in
       if grep -q "$value" "$work/stderr"; then fail "value was printed"; fi
     fi
     ;;
+  submodule-textconv)
+    src="$work/src"
+    mkdir -p "$src"
+    git -C "$src" init -q
+    git -C "$src" config user.name Test
+    git -C "$src" config user.email test@example.invalid
+    printf 'a\n' >"$src/f.txt"
+    printf '*.txt diff=t\n' >"$src/.gitattributes"
+    git -C "$src" add .
+    git -C "$src" commit -q -m Source
+    init_repo
+    git -C "$work/repo" -c protocol.file.allow=always submodule -q add "$src" sub
+    git -C "$work/repo" commit -q -m "Add submodule"
+    git -C "$work/repo/sub" config diff.t.textconv "touch '$work/marker'; cat"
+    printf 'b\n' >>"$work/repo/sub/f.txt"
+    bash "$repo_root/scripts/llm_git_diff.sh" "$work/repo" --save-path "$work/diff" --submodule=diff >"$work/stdout" 2>"$work/stderr"
+    [[ ! -e "$work/marker" ]] || fail "submodule textconv ran"
+    ;;
   nested-staged)
     init_repo
     mkdir -p "$work/inner"

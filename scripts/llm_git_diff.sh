@@ -41,6 +41,7 @@ Notes:
   Script-specific options must appear before a standalone '--' separator.
   If the clipboard tool is missing, --save-path still saves the file.
   External diff drivers, textconv, and clean filters are not run.
+  Submodule diffs are summaries, so a textconv inside a submodule is not run.
 USAGE
 }
 
@@ -253,12 +254,12 @@ SAFE_DIFF_ARGS=()
 flags_added=0
 for a in ${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}; do
   if [[ "$a" == -- && "$flags_added" -eq 0 ]]; then
-    SAFE_DIFF_ARGS+=(--no-ext-diff --no-textconv)
+    SAFE_DIFF_ARGS+=(--no-ext-diff --no-textconv --submodule=short)
     flags_added=1
   fi
   SAFE_DIFF_ARGS+=("$a")
 done
-[[ "$flags_added" -eq 1 ]] || SAFE_DIFF_ARGS+=(--no-ext-diff --no-textconv)
+[[ "$flags_added" -eq 1 ]] || SAFE_DIFF_ARGS+=(--no-ext-diff --no-textconv --submodule=short)
 
 # Run the diff; pass through any extra args provided
 # Examples you can pass:
