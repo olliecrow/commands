@@ -1,6 +1,8 @@
 name: Checks
 
 on:
+  schedule:
+    - cron: "17 6 * * 1"
   pull_request:
   push:
     branches:
@@ -42,7 +44,7 @@ jobs:
           echo "${RUNNER_TEMP}/bin" >> "$GITHUB_PATH"
 
       - name: Run shellcheck
-        run: shellcheck -x -S warning scripts/*.sh scripts/security/*.sh tests/run.sh completions/commands.bash
+        run: shellcheck -x -S warning scripts/*.sh scripts/security/*.sh tests/*.sh completions/commands.bash
 
       - name: Install gitleaks
         run: |
@@ -69,14 +71,15 @@ jobs:
           set -euo pipefail
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             range="${PR_BASE_SHA}..${PR_HEAD_SHA}"
-          elif [[ "${PUSH_BEFORE_SHA}" == "0000000000000000000000000000000000000000" ]]; then
-            range="${GITHUB_SHA}^!"
+          elif [[ -z "${PUSH_BEFORE_SHA}" || "${PUSH_BEFORE_SHA}" == "0000000000000000000000000000000000000000" ]] ||
+               ! git cat-file -e "${PUSH_BEFORE_SHA}^{commit}" 2>/dev/null; then
+            range="${GITHUB_SHA}"
           else
             range="${PUSH_BEFORE_SHA}..${GITHUB_SHA}"
           fi
           # Also scan what a merge commit adds against its first parent.
           gitleaks git --redact --verbose --config .gitleaks.toml \
-            --log-opts="--diff-merges=first-parent ${range}"
+            --log-opts="--text --no-ext-diff --no-textconv --diff-merges=first-parent ${range}"
 
       - name: Check pushed/PR commit messages and added lines
         env:
@@ -88,8 +91,12 @@ jobs:
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             bash scripts/security/check-push-range.sh --from "${PR_BASE_SHA}" --to "${PR_HEAD_SHA}"
           else
-            # An all-zero "before" makes the script scan the new commits.
-            bash scripts/security/check-push-range.sh --from "${PUSH_BEFORE_SHA}" --to "${GITHUB_SHA}"
+            base="${PUSH_BEFORE_SHA}"
+            if [[ -z "$base" || "$base" == "0000000000000000000000000000000000000000" ]] ||
+               ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+              base="0000000000000000000000000000000000000000"
+            fi
+            bash scripts/security/check-push-range.sh --from "$base" --to "${GITHUB_SHA}"
           fi
 
       - name: Check pull request title/body for policy violations

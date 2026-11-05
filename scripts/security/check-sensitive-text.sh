@@ -14,8 +14,10 @@ fi
 
 local_path_regex='(/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+|[A-Za-z]:\\+Users\\+[A-Za-z0-9._-]+)'
 allowed_path_placeholder_regex='(/Users/(YOU|USER|username)|/home/(user|USER|username)|[A-Za-z]:\\+Users\\+(YOU|USER|USERNAME|username))'
-secret_assignment_regex='([Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Tt][Oo][Kk][Ee][Nn]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Ss][Ee][Cc][Rr][Ee][Tt])[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_./+=-]{12,}'
-known_token_regex='((ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9]{20,})'
+secret_assignment_regex='([Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Tt][Oo][Kk][Ee][Nn]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Ss][Ee][Cc][Rr][Ee][Tt])["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_./+=-]{12,}'
+known_token_regex='((ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,})'
+
+private_key_regex='-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY-----'
 
 # Print the line numbers that match an extended regex. Exit non-zero if
 # grep itself fails, so a broken scan never reads as a clean one.
@@ -83,12 +85,14 @@ for target in "$@"; do
   path_matches="$(search_disallowed_path_line_numbers "$target")"
 
   secret_assignment_matches="$(search_line_numbers "$secret_assignment_regex" "$target")"
+  private_key_matches="$(search_line_numbers "$private_key_regex" "$target")"
   known_token_matches="$(search_line_numbers "$known_token_regex" "$target")"
 
-  if [[ -n "$path_matches" || -n "$secret_assignment_matches" || -n "$known_token_matches" ]]; then
+  if [[ -n "$path_matches" || -n "$secret_assignment_matches" || -n "$known_token_matches" || -n "$private_key_matches" ]]; then
     echo "policy violation in ${context}: $(display_name "$target")" >&2
     report_lines "local machine path" "$path_matches"
     report_lines "credential-like assignment" "$secret_assignment_matches"
+    report_lines "private key block" "$private_key_matches"
     report_lines "known token format" "$known_token_matches"
     failed=1
   fi
