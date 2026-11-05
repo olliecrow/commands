@@ -239,6 +239,27 @@ case "${1:-}" in
       if grep -q "$value" "$work/stderr"; then fail "value was printed"; fi
     fi
     ;;
+  nested-staged)
+    init_repo
+    mkdir -p "$work/inner"
+    git -C "$work/inner" init -q
+    git -C "$work/inner" config user.name Test
+    git -C "$work/inner" config user.email test@example.invalid
+    printf 'inner\n' >"$work/inner/f.txt"
+    git -C "$work/inner" add .
+    git -C "$work/inner" commit -q -m Inner
+    mv "$work/inner" "$work/repo/inner"
+    before="$(git -C "$work/repo" status --porcelain=v2)"
+    bash "$repo_root/scripts/llm_git_diff.sh" "$work/repo" --save-path "$work/diff" --staged >"$work/stdout" 2>"$work/stderr"
+    grep -q "Subproject commit" "$work/diff" || fail "nested repository was not recorded"
+    if grep -q "fatal:" "$work/stderr"; then fail "nested repository aborted the diff"; fi
+    after="$(git -C "$work/repo" status --porcelain=v2)"
+    [[ "$before" == "$after" ]] || fail "real index changed"
+    git -C "$work/repo" init -q empty
+    bash "$repo_root/scripts/llm_git_diff.sh" "$work/repo" --save-path "$work/diff" --staged >"$work/stdout" 2>"$work/stderr"
+    grep -q "nested repository has no commits" "$work/stderr" || fail "empty nested repository was not skipped"
+    if grep -q "fatal:" "$work/stderr"; then fail "empty nested repository aborted the diff"; fi
+    ;;
   config-root|config-merge|config-encoding)
     case "$1" in
       config-root)

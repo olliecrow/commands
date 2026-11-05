@@ -216,6 +216,18 @@ if [[ "$INCLUDE_UNTRACKED" -eq 1 ]]; then
     fi
     if [[ "$STAGED_DIFF" -eq 1 ]]; then
       for f in "${UNTRACKED[@]}"; do
+        # An untracked nested repository is a gitlink, not a file. hash-object
+        # cannot hash the directory and used to abort the whole diff.
+        if [[ -d "$REPO_PATH/$f" && ! -L "$REPO_PATH/$f" ]]; then
+          nested_name="${f%/}"
+          nested_oid="$(git -C "$REPO_PATH/$nested_name" rev-parse --verify -q HEAD)" || nested_oid=""
+          if [[ -z "$nested_oid" ]]; then
+            echo "warning: skipping $nested_name (nested repository has no commits)" >&2
+            continue
+          fi
+          GIT_INDEX_FILE="$TEMP_INDEX_FILE" git -C "$REPO_PATH" update-index --add --cacheinfo 160000 "$nested_oid" "$nested_name"
+          continue
+        fi
         mode=100644
         if [[ -L "$REPO_PATH/$f" ]]; then
           # Preserve the symlink itself, including a trailing newline.
