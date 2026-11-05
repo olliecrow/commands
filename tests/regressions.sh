@@ -239,6 +239,50 @@ case "${1:-}" in
       if grep -q "$value" "$work/stderr"; then fail "value was printed"; fi
     fi
     ;;
+  config-root|config-merge|config-encoding)
+    case "$1" in
+      config-root)
+        mkdir -p "$work/rootrepo"
+        git -C "$work/rootrepo" init -q -b main
+        git -C "$work/rootrepo" config user.name Test
+        git -C "$work/rootrepo" config user.email test@example.invalid
+        printf 'api_key=%s\n' "$value" >"$work/rootrepo/a.txt"
+        git -C "$work/rootrepo" add .
+        git -C "$work/rootrepo" commit -q -m Root
+        git -C "$work/rootrepo" config log.showRoot false
+        tip="$(git -C "$work/rootrepo" rev-parse HEAD)"
+        root_scan() { (cd "$work/rootrepo" && bash "$repo_root/scripts/security/check-push-range.sh" "$@"); }
+        blocked root_scan --to "$tip"
+        ;;
+      config-merge)
+        init_repo
+        printf 'one\n' >"$work/repo/a.txt"
+        commit_files
+        base_branch="$(git -C "$work/repo" branch --show-current)"
+        git -C "$work/repo" switch -q -c side
+        printf 's\n' >"$work/repo/s.txt"
+        commit_files
+        side="$tip"
+        git -C "$work/repo" switch -q "$base_branch"
+        git -C "$work/repo" merge -q --no-ff --no-commit side >/dev/null 2>&1
+        printf 'api_key=%s\n' "$value" >"$work/repo/evil.txt"
+        git -C "$work/repo" add .
+        git -C "$work/repo" commit -q -m Merge
+        tip="$(git -C "$work/repo" rev-parse HEAD)"
+        git -C "$work/repo" config log.diffMerges off
+        blocked scan_push --from "$side" --to "$tip"
+        ;;
+      config-encoding)
+        init_repo
+        printf 'ok\n' >"$work/repo/a.txt"
+        git -C "$work/repo" add .
+        git -C "$work/repo" commit -q -m "api_key=$value"
+        tip="$(git -C "$work/repo" rev-parse HEAD)"
+        git -C "$work/repo" config i18n.logOutputEncoding UTF-16LE
+        blocked scan_push --from "$base" --to "$tip"
+        ;;
+    esac
+    ;;
   utf16|nul-before|latin1-clean|latin1-direct)
     case "$1" in
       utf16)

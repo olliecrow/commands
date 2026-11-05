@@ -91,8 +91,12 @@ fi
 bash "${script_dir}/check-sensitive-text.sh" --context=push-tag "$commit_msg_file"
 [[ -n "$commit_list" ]] || exit 0
 
+# These options override user git config. Without them, log.showRoot,
+# log.diffMerges, or i18n.logOutputEncoding can hide a root commit, a
+# merge, or a commit message. --no-pager keeps a pager from filtering output.
 printf '%s\n' "$commit_list" |
-  git log --stdin --no-walk=unsorted --format='%H%n%s%n%b%n' >>"${commit_msg_file}"
+  git --no-pager log --stdin --no-walk=unsorted --encoding=UTF-8 --no-notes \
+    --format='%H%n%s%n%b%n' >>"${commit_msg_file}"
 
 # Print only "+" lines inside hunks, so an added line that itself starts
 # with "++" is kept. --no-ext-diff and --no-textconv make git print the
@@ -100,7 +104,8 @@ printf '%s\n' "$commit_list" |
 # Drop NULs and bytes outside ASCII before awk. Some awk builds stop at a
 # NUL or reject non-UTF-8, which hides a secret or blocks a clean file.
 printf '%s\n' "$commit_list" |
-  git log --stdin --no-walk=unsorted -m --first-parent --format= --patch \
+  git --no-pager log --stdin --no-walk=unsorted --root --diff-merges=first-parent \
+    --no-renames --no-notes --format= --patch \
     --text --no-color --unified=0 --no-ext-diff --no-textconv |
   LC_ALL=C tr -d '\000' | LC_ALL=C tr -c '\11\12\40-\176' '?' |
   awk '/^diff / { in_hunk = 0; next } /^@@ / { in_hunk = 1; next } in_hunk && /^\+/ { sub(/^\+/, ""); print }' \
@@ -110,5 +115,6 @@ bash "${script_dir}/check-sensitive-text.sh" --context=push-commit-message "${co
 bash "${script_dir}/check-sensitive-text.sh" --context=push-added-lines "${added_lines_file}"
 
 printf '%s\n' "$commit_list" |
-  git -c core.quotePath=false diff-tree --stdin --root -r -m --first-parent --no-commit-id --name-only >"$paths_file"
+  git --no-pager -c core.quotePath=false diff-tree --stdin --root -r \
+    --diff-merges=first-parent --no-renames --no-commit-id --name-only >"$paths_file"
 bash "${script_dir}/check-sensitive-text.sh" --context=push-paths "$paths_file"
