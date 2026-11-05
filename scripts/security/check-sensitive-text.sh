@@ -17,28 +17,38 @@ allowed_path_placeholder_regex='(/Users/(YOU|USER|username)|/home/(user|USER|use
 secret_assignment_regex='([Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Tt][Oo][Kk][Ee][Nn]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Ss][Ee][Cc][Rr][Ee][Tt])[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_./+=-]{12,}'
 known_token_regex='((ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9]{20,})'
 
+# Print the line numbers that match an extended regex. Exit non-zero if
+# grep itself fails, so a broken scan never reads as a clean one.
 search_line_numbers() {
   local pattern="$1"
   local file_path="$2"
-  if command -v rg >/dev/null 2>&1; then
-    rg --line-number --no-heading --color never -e "$pattern" "$file_path" |
-      cut -d: -f1 || true
-  else
-    grep -nE "$pattern" "$file_path" |
-      cut -d: -f1 || true
+  local matches status=0
+  matches="$(grep -anE -e "$pattern" -- "$file_path")" || status=$?
+  if [[ "$status" -gt 1 ]]; then
+    echo "error: unable to scan $(display_name "$file_path")" >&2
+    return 2
+  fi
+  if [[ -n "$matches" ]]; then
+    printf '%s\n' "$matches" | cut -d: -f1
   fi
 }
 
+# Check each local-path match on its own. A placeholder such as /Users/YOU
+# is allowed only as a whole path segment. A longer name that starts with a
+# placeholder, or a real path on the same line as one, is still reported.
+# The regexes go through ENVIRON because awk -v would rewrite backslashes.
 search_disallowed_path_line_numbers() {
   local file_path="$1"
-  awk \
-    -v local_path="$local_path_regex" \
-    -v allowed_placeholder="$allowed_path_placeholder_regex" \
-    '{
-      scrubbed = $0
-      gsub(allowed_placeholder, "", scrubbed)
-      if (scrubbed ~ local_path) {
-        print NR
+  LOCAL_PATH_REGEX="$local_path_regex" \
+    ALLOWED_PATH_REGEX="^${allowed_path_placeholder_regex}\$" \
+    awk '{
+      rest = $0
+      while (match(rest, ENVIRON["LOCAL_PATH_REGEX"])) {
+        if (substr(rest, RSTART, RLENGTH) !~ ENVIRON["ALLOWED_PATH_REGEX"]) {
+          print NR
+          next
+        }
+        rest = substr(rest, RSTART + RLENGTH)
       }
     }' "$file_path"
 }
@@ -66,7 +76,8 @@ report_lines() {
 failed=0
 for target in "$@"; do
   if [[ ! -f "$target" ]]; then
-    continue
+    echo "error: file not found: $(display_name "$target")" >&2
+    exit 2
   fi
 
   path_matches="$(search_disallowed_path_line_numbers "$target")"

@@ -243,30 +243,46 @@ test_sensitive_text_policy() {
   assert_not_contains "$error_file" "$secret_value"
   assert_not_contains "$error_file" "$work_dir"
 
-  if PATH="/usr/bin:/bin" bash "$repo_root/scripts/security/check-sensitive-text.sh" \
-    --context=fallback-test "$bad_file" >/dev/null 2>"$error_file"; then
-    fail "fallback sensitive-text check did not block the value"
-  fi
-  assert_not_contains "$error_file" "$secret_value"
+  # Build the paths at run time so this file does not trip the scanners.
+  local blocked_path users="Users" home="home"
+  for blocked_path in \
+    "/$users/YOU /$users/private-example" \
+    "/$users/YOUNG" \
+    "/$home/username2" \
+    "C:\\$users\\private-example"; do
+    printf 'path: %s\n' "$blocked_path" >"$mixed_path_file"
+    if bash "$repo_root/scripts/security/check-sensitive-text.sh" \
+      --context=path-test "$mixed_path_file" >/dev/null 2>&1; then
+      fail "local path was not blocked: $blocked_path"
+    fi
+  done
 
-  printf 'paths: /Users/%s /Users/%s\n' YOU private-example >"$mixed_path_file"
   if bash "$repo_root/scripts/security/check-sensitive-text.sh" \
-    --context=mixed-path-test "$mixed_path_file" >/dev/null 2>"$error_file"; then
-    fail "real local path beside a placeholder was not blocked"
+    --context=test "$work_dir/missing.txt" >/dev/null 2>&1; then
+    fail "missing input file was accepted"
   fi
   pass "redacted sensitive-text reports"
+}
+
+push_range_check() {
+  local repo_dir="$1"
+  shift
+  (
+    cd "$repo_dir"
+    bash "$repo_root/scripts/security/check-push-range.sh" "$@"
+  )
 }
 
 test_push_range_policy() {
   local repo_dir="$test_root/push-range"
   local error_file="$test_root/push-range-error.txt"
-  local secret_value
-  mkdir -p "$repo_dir/scripts"
-  cp -R "$repo_root/scripts/security" "$repo_dir/scripts/security"
+  local secret_value private_path
+  mkdir -p "$repo_dir"
   git -C "$repo_dir" init -q -b main
   git -C "$repo_dir" config user.name "Test User"
   git -C "$repo_dir" config user.email "test@example.invalid"
   printf -v secret_value '%s%s' 'abc123456' '789XYZ'
+  printf -v private_path '/%s/%s' home private-example
 
   printf 'token=%s\n' "$secret_value" >"$repo_dir/example.txt"
   git -C "$repo_dir" add .
@@ -279,26 +295,70 @@ test_push_range_policy() {
   local removal_commit
   removal_commit="$(git -C "$repo_dir" rev-parse HEAD)"
 
-  (
-    cd "$repo_dir"
-    PRE_COMMIT_FROM_REF="$secret_commit" PRE_COMMIT_TO_REF="$removal_commit" \
-      bash scripts/security/check-push-range.sh
-  ) >/dev/null 2>&1 || fail "removing sensitive text was blocked"
+  PRE_COMMIT_FROM_REF="$secret_commit" PRE_COMMIT_TO_REF="$removal_commit" \
+    push_range_check "$repo_dir" >/dev/null 2>&1 ||
+    fail "removing sensitive text was blocked"
 
   printf 'token=%s\n' "$secret_value" >"$repo_dir/example.txt"
   git -C "$repo_dir" commit -qam "Add unsafe value"
   local unsafe_commit
   unsafe_commit="$(git -C "$repo_dir" rev-parse HEAD)"
 
-  if (
-    cd "$repo_dir"
-    PRE_COMMIT_FROM_REF="$removal_commit" PRE_COMMIT_TO_REF="$unsafe_commit" \
-      bash scripts/security/check-push-range.sh
-  ) >/dev/null 2>"$error_file"; then
+  if PRE_COMMIT_FROM_REF="$removal_commit" PRE_COMMIT_TO_REF="$unsafe_commit" \
+    push_range_check "$repo_dir" >/dev/null 2>"$error_file"; then
     fail "added sensitive text was not blocked"
   fi
   assert_not_contains "$error_file" "$secret_value"
-  pass "added-line push policy"
+
+  # pre-commit sets no range when the push includes the root commit.
+  if PRE_COMMIT_LOCAL_BRANCH=refs/heads/main \
+    push_range_check "$repo_dir" >/dev/null 2>&1; then
+    fail "root push without a pre-commit range was not scanned"
+  fi
+  if push_range_check "$repo_dir" >/dev/null 2>&1; then
+    fail "missing push range was accepted"
+  fi
+  if push_range_check "$repo_dir" --from "$removal_commit" --to --all >/dev/null 2>&1; then
+    fail "non-commit push target was accepted"
+  fi
+  if push_range_check "$test_root" --to "$unsafe_commit" >/dev/null 2>"$error_file"; then
+    fail "git failure outside a repository was accepted"
+  fi
+  assert_contains "$error_file" "unable to list commits"
+
+  # An added line that starts with "++" is content, not a diff header.
+  printf 'safe\n' >"$repo_dir/example.txt"
+  git -C "$repo_dir" commit -qam "Remove unsafe value"
+  local clean_commit
+  clean_commit="$(git -C "$repo_dir" rev-parse HEAD)"
+  printf '++ %s\n' "$private_path" >"$repo_dir/plus.txt"
+  git -C "$repo_dir" add plus.txt
+  git -C "$repo_dir" commit -q -m "Add plus line"
+  if push_range_check "$repo_dir" --from "$clean_commit" \
+    --to "$(git -C "$repo_dir" rev-parse HEAD)" >/dev/null 2>"$error_file"; then
+    fail "added line starting with ++ was not scanned"
+  fi
+  assert_contains "$error_file" "local machine path on line(s): 1"
+  assert_not_contains "$error_file" "$private_path"
+
+  # A merge commit that adds a value of its own must be scanned.
+  git -C "$repo_dir" switch -q -c side "$clean_commit"
+  printf 'side\n' >"$repo_dir/side.txt"
+  git -C "$repo_dir" add side.txt
+  git -C "$repo_dir" commit -q -m "Add side file"
+  local side_commit
+  side_commit="$(git -C "$repo_dir" rev-parse HEAD)"
+  git -C "$repo_dir" switch -q -c merged "$clean_commit"
+  git -C "$repo_dir" merge -q --no-ff --no-commit side >/dev/null
+  printf 'token=%s\n' "$secret_value" >"$repo_dir/merge.txt"
+  git -C "$repo_dir" add merge.txt
+  git -C "$repo_dir" commit -q -m "Merge side"
+  if push_range_check "$repo_dir" --from "$side_commit" \
+    --to "$(git -C "$repo_dir" rev-parse HEAD)" >/dev/null 2>"$error_file"; then
+    fail "value added by a merge commit was not blocked"
+  fi
+  assert_not_contains "$error_file" "$secret_value"
+  pass "fail-closed push policy"
 }
 
 test_help
