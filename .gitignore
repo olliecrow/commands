@@ -1,17 +1,5 @@
-# Dependencies and build output
-node_modules/
-npm-debug.log*
-yarn-error.log*
-yarn-debug.log*
-pnpm-debug.log*
-dist/
-build/
+# Archives
 *.zip
-
-# Test output
-coverage/
-*.lcov
-.nyc_output/
 
 # Editors and operating systems
 .vscode/
