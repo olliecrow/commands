@@ -97,9 +97,12 @@ printf '%s\n' "$commit_list" |
 # Print only "+" lines inside hunks, so an added line that itself starts
 # with "++" is kept. --no-ext-diff and --no-textconv make git print the
 # real content instead of running a diff driver from the repo config.
+# Drop NULs and bytes outside ASCII before awk. Some awk builds stop at a
+# NUL or reject non-UTF-8, which hides a secret or blocks a clean file.
 printf '%s\n' "$commit_list" |
   git log --stdin --no-walk=unsorted -m --first-parent --format= --patch \
     --text --no-color --unified=0 --no-ext-diff --no-textconv |
+  LC_ALL=C tr -d '\000' | LC_ALL=C tr -c '\11\12\40-\176' '?' |
   awk '/^diff / { in_hunk = 0; next } /^@@ / { in_hunk = 1; next } in_hunk && /^\+/ { sub(/^\+/, ""); print }' \
     >"${added_lines_file}"
 

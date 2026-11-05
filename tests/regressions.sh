@@ -25,6 +25,61 @@ clean_text() {
     fail "clean input was blocked"
   fi
 }
+# Stand in for awk builds that stop at NUL or reject non-UTF-8 bytes.
+install_awk_stub() {
+  local mode="$1"
+  mkdir -p "$work/bin"
+  printf '%s\n' "$mode" >"$work/bin/awk-mode"
+  cat >"$work/bin/awk" <<'PY'
+#!/usr/bin/env python3
+import os
+import subprocess
+import sys
+import tempfile
+
+mode_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "awk-mode")
+with open(mode_path, "r", encoding="ascii") as handle:
+    mode = handle.read().strip()
+real = "/usr/bin/awk"
+args = sys.argv[1:]
+
+
+def transform(data):
+    if mode == "high" and any(byte > 127 or byte == 0 for byte in data):
+        sys.stderr.write("multibyte conversion failure\n")
+        raise SystemExit(2)
+    if mode == "nul":
+        return b"\n".join(part.split(b"\0", 1)[0] for part in data.split(b"\n"))
+    return data
+
+
+paths = []
+if args and os.path.isfile(args[-1]) and not args[-1].startswith("-"):
+    paths = [args[-1]]
+    args = args[:-1]
+temps = []
+try:
+    if paths:
+        new_args = list(args)
+        for path in paths:
+            with open(path, "rb") as handle:
+                data = transform(handle.read())
+            temp = tempfile.NamedTemporaryFile(delete=False)
+            temp.write(data)
+            temp.close()
+            temps.append(temp.name)
+            new_args.append(temp.name)
+        raise SystemExit(subprocess.run([real, *new_args]).returncode)
+    raise SystemExit(subprocess.run([real, *args], input=transform(sys.stdin.buffer.read())).returncode)
+finally:
+    for path in temps:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+PY
+  chmod +x "$work/bin/awk"
+}
 init_repo() {
   mkdir -p "$work/repo"
   git -C "$work/repo" init -q
@@ -183,6 +238,40 @@ case "${1:-}" in
       grep -q "notes.txt" "$work/stderr" || fail "sensitive file was not named"
       if grep -q "$value" "$work/stderr"; then fail "value was printed"; fi
     fi
+    ;;
+  utf16|nul-before|latin1-clean|latin1-direct)
+    case "$1" in
+      utf16)
+        init_repo
+        python3 -c 'import sys; sys.stdout.buffer.write(sys.argv[1].encode("utf-16le"))' \
+          "$(printf 'api_key=%s\n' "$value")" >"$work/repo/a.txt"
+        commit_files
+        blocked scan_push --from "$base" --to "$tip"
+        ;;
+      nul-before)
+        install_awk_stub nul
+        init_repo
+        {
+          printf 'x'
+          printf '\0'
+          printf 'api_key=%s\n' "$value"
+        } >"$work/repo/a.txt"
+        commit_files
+        PATH="$work/bin:/usr/bin:/bin" blocked scan_push --from "$base" --to "$tip"
+        ;;
+      latin1-clean)
+        install_awk_stub high
+        init_repo
+        printf 'caf\xe9 ok\n' >"$work/repo/a.txt"
+        commit_files
+        PATH="$work/bin:/usr/bin:/bin" clean_text scan_push --from "$base" --to "$tip"
+        ;;
+      latin1-direct)
+        install_awk_stub high
+        printf 'caf\xe9 ok\n' >"$work/input"
+        PATH="$work/bin:/usr/bin:/bin" clean_text bash "$repo_root/scripts/security/check-sensitive-text.sh" "$work/input"
+        ;;
+    esac
     ;;
   *) fail "unknown regression case" ;;
 esac

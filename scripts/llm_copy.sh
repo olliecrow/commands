@@ -171,6 +171,12 @@ write_file_section() {
   } >>"$TMP_FILE"
 }
 
+# Same normalization as the push scanner. One pass over the bundle, not
+# one process per file. Line breaks stay put.
+normalize_bytes() {
+  LC_ALL=C tr -d '\000' <"$1" | LC_ALL=C tr -c '\11\12\40-\176' '?' >"$2"
+}
+
 # Return 0 when the bundle text matches a credential pattern, 1 when it
 # does not, and 2 when the scan itself fails.
 bundle_has_sensitive_content() {
@@ -264,12 +270,16 @@ fi
 # bundle is complete, so a failed run does not damage an existing file.
 CLEANUP_BUILD_FILE=1
 HITS_FILE=""
+SCAN_FILE=""
 cleanup() {
   if [[ "$CLEANUP_BUILD_FILE" -eq 1 && -n "${BUILD_FILE:-}" ]]; then
     rm -f -- "$BUILD_FILE"
   fi
   if [[ -n "${HITS_FILE:-}" ]]; then
     rm -f -- "$HITS_FILE"
+  fi
+  if [[ -n "${SCAN_FILE:-}" ]]; then
+    rm -f -- "$SCAN_FILE"
   fi
 }
 trap cleanup EXIT
@@ -343,11 +353,13 @@ done
 # Drop only the files that matched. If a match cannot be removed, keep the
 # previous output and stop. Values are never printed.
 if [[ "$ALLOW_SENSITIVE" != "true" && -s "$TMP_FILE" ]]; then
+  SCAN_FILE="$(mktemp "${TMPDIR:-/tmp}/${TMP_BASENAME}.scan.XXXXXX")"
+  normalize_bytes "$TMP_FILE" "$SCAN_FILE"
   sensitive_status=0
-  bundle_has_sensitive_content "$TMP_FILE" || sensitive_status=$?
+  bundle_has_sensitive_content "$SCAN_FILE" || sensitive_status=$?
   if [[ "$sensitive_status" -eq 0 ]]; then
     HITS_FILE="$(mktemp "${TMPDIR:-/tmp}/${TMP_BASENAME}.hits.XXXXXX")"
-    sensitive_paths_in_bundle "$TMP_FILE" >"$HITS_FILE"
+    sensitive_paths_in_bundle "$SCAN_FILE" >"$HITS_FILE"
     if [[ ! -s "$HITS_FILE" ]]; then
       die "credential-like content was found, but the file could not be named; nothing was copied or saved"
     fi
@@ -364,8 +376,9 @@ if [[ "$ALLOW_SENSITIVE" != "true" && -s "$TMP_FILE" ]]; then
       included_index=$((included_index + 1))
     done
     if [[ -s "$TMP_FILE" ]]; then
+      normalize_bytes "$TMP_FILE" "$SCAN_FILE"
       sensitive_status=0
-      bundle_has_sensitive_content "$TMP_FILE" || sensitive_status=$?
+      bundle_has_sensitive_content "$SCAN_FILE" || sensitive_status=$?
       if [[ "$sensitive_status" -eq 0 ]]; then
         die "credential-like content remained after skipping files; nothing was copied or saved"
       elif [[ "$sensitive_status" -gt 1 ]]; then
