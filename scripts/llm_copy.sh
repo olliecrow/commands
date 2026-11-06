@@ -12,7 +12,9 @@ readonly ALLOWED_EXTENSIONS="txt md py json jsonl yaml yml js html sh rs toml cf
 readonly ALLOWED_FILENAMES="Dockerfile Containerfile Imagefile Makefile Procfile Rakefile Gemfile Pipfile Brewfile Jenkinsfile Vagrantfile LICENSE COPYING NOTICE README CHANGES CHANGELOG VERSION"
 # Keep content patterns in sync with scripts/security/check-sensitive-text.sh.
 readonly SECRET_ASSIGNMENT_REGEX='([Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Tt][Oo][Kk][Ee][Nn]|[Pp][Aa][Ss][Ss]([Ww][Oo][Rr][Dd]|[Ww][Dd])|[Ss][Ee][Cc][Rr][Ee][Tt]([_-]?([Aa][Cc][Cc][Ee][Ss][Ss][_-]?)?[Kk][Ee][Yy])?|[Pp][Rr][Ii][Vv][Aa][Tt][Ee][_-]?[Kk][Ee][Yy])["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_./+=-]{4,}[0-9+/=][A-Za-z0-9_./+=-]{4,}(["'"'"'`,;)}[:space:]]|$)'
-readonly KNOWN_TOKEN_REGEX='((ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{3,}\.[A-Za-z0-9_-]{16,})'
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/security/token-pattern.sh
+source "$script_dir/security/token-pattern.sh"
 readonly PRIVATE_KEY_REGEX='-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY-----'
 readonly HEADER_PREFIX="# File: "
 readonly TMP_BASENAME="llm_bundle"

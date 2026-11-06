@@ -21,7 +21,9 @@ normalize_bytes() {
 local_path_regex='(/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+|[A-Za-z]:\\+[Uu][Ss][Ee][Rr][Ss]\\+[A-Za-z0-9._-]+)'
 allowed_path_placeholder_regex='(/Users/(YOU|USER|username)|/home/(user|USER|username)|[A-Za-z]:\\+[Uu][Ss][Ee][Rr][Ss]\\+(YOU|USER|USERNAME|username))'
 secret_assignment_regex='([Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Tt][Oo][Kk][Ee][Nn]|[Pp][Aa][Ss][Ss]([Ww][Oo][Rr][Dd]|[Ww][Dd])|[Ss][Ee][Cc][Rr][Ee][Tt]([_-]?([Aa][Cc][Cc][Ee][Ss][Ss][_-]?)?[Kk][Ee][Yy])?|[Pp][Rr][Ii][Vv][Aa][Tt][Ee][_-]?[Kk][Ee][Yy])["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_./+=-]{4,}[0-9+/=][A-Za-z0-9_./+=-]{4,}(["'"'"'`,;)}[:space:]]|$)'
-known_token_regex='((ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{3,}\.[A-Za-z0-9_-]{16,})'
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/security/token-pattern.sh
+source "$script_dir/token-pattern.sh"
 
 private_key_regex='-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY-----'
 
@@ -96,7 +98,7 @@ for target in "$@"; do
 
   secret_assignment_matches="$(search_line_numbers "$secret_assignment_regex" "$scan_file")"
   private_key_matches="$(search_line_numbers "$private_key_regex" "$scan_file")"
-  known_token_matches="$(search_line_numbers "$known_token_regex" "$scan_file")"
+  known_token_matches="$(search_line_numbers "$KNOWN_TOKEN_REGEX" "$scan_file")"
 
   if [[ -n "$path_matches" || -n "$secret_assignment_matches" || -n "$known_token_matches" || -n "$private_key_matches" ]]; then
     echo "policy violation in ${context}: $(display_name "$target")" >&2

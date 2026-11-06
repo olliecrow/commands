@@ -396,11 +396,33 @@ case "${1:-}" in
     if grep -q "$jwt" "$work/stderr"; then fail "value was printed"; fi
     ;;
   token-formats)
-    for prefix in sk-ant-oat01- sk-ant-api03- github_pat_11 gho_ ghu_ ghs_ ghr_; do
+    for prefix in sk-ant-oat01- sk-ant-api03- sk-ant-admin01- sk-proj- sk-svcacct- sk-admin- sk- ghp_ github_pat_11 gho_ ghu_ ghs_ ghr_; do
       printf '%s%s\n' "$prefix" abcdefghijklmnopqrstuvwxyz0123456789 >"$work/notes.txt"
       blocked bash "$repo_root/scripts/security/check-sensitive-text.sh" "$work/notes.txt"
       skipped_copy bash "$repo_root/scripts/llm_copy.sh" --save-path "$work/bundle" "$work/notes.txt"
     done
+    ;;
+  token-boundaries)
+    init_repo
+    printf '%s\n' 'task-list-item' 'risk-assessment' \
+      'class="task-list-item-checkbox-v2"' 'the risk-assessment-for-new-users doc' \
+      'see desk-booking_service_module' 'sk-abcd-efgh-ijkl-mnop-qrst' \
+      'kubernetes-task-scheduler-configuration' '/dev/disk-by-partition-label-example' \
+      'task-ant-colony-optimisation-notes' >"$work/repo/ordinary.txt"
+    printf '%s%s\n' myghp_ abcdefghijklmnopqrstuvwxyz0123456789 >>"$work/repo/ordinary.txt"
+    printf '%s%s\n' XXAKIA IOSFODNN7EXAMPLE >>"$work/repo/ordinary.txt"
+    printf 'they%s\n' "$jwt" >>"$work/repo/ordinary.txt"
+    clean_text bash "$repo_root/scripts/security/check-sensitive-text.sh" "$work/repo/ordinary.txt"
+    git -C "$work/repo" add .
+    clean_text scan_staged
+    commit_files
+    clean_text scan_push --from "$base" --to "$tip"
+    bash "$repo_root/scripts/llm_copy.sh" --save-path "$work/bundle" "$work/repo" >"$work/stdout" 2>"$work/stderr"
+    grep -q '# File: ordinary.txt' "$work/bundle" || fail "ordinary text was skipped"
+    if grep -q 'credential-like content' "$work/stderr"; then fail "ordinary text flagged"; fi
+    printf '%s%s\n' AKIA IOSFODNN7EXAMPLE >"$work/notes.txt"
+    blocked bash "$repo_root/scripts/security/check-sensitive-text.sh" "$work/notes.txt"
+    skipped_copy bash "$repo_root/scripts/llm_copy.sh" --save-path "$work/bundle" "$work/notes.txt"
     ;;
   gitleaks-paths)
     # Paths are built at run time so this file does not trip the scanners.
