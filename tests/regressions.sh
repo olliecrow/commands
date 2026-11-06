@@ -424,6 +424,48 @@ case "${1:-}" in
     blocked bash "$repo_root/scripts/security/check-sensitive-text.sh" "$work/notes.txt"
     skipped_copy bash "$repo_root/scripts/llm_copy.sh" --save-path "$work/bundle" "$work/notes.txt"
     ;;
+  copy-symlink)
+    mkdir -p "$work/input" "$work/bin/sub" "$work/alone"
+    printf 'hello bundle\n' >"$work/input/keep.txt"
+    printf -v token '%s%s' 'ghp_' 'abcdefghijklmnopqrstuvwxyz'
+    printf 'secret %s\n' "$token" >"$work/input/notes.txt"
+    ln -s "$repo_root/scripts/llm_copy.sh" "$work/bin/llm_copy"
+    ln -s llm_copy "$work/bin/llm_copy_rel"
+    ln -s ../llm_copy "$work/bin/sub/llm_copy"
+    status=0
+    "$work/bin/sub/llm_copy" --save-path "$work/bundle" "$work/input" >"$work/stdout" 2>"$work/stderr" || status=$?
+    [[ "$status" -eq 0 ]] || fail "symlink invocation failed with status $status"
+    grep -q 'hello bundle' "$work/bundle" || fail "symlink invocation did not copy"
+    if grep -q "$token" "$work/bundle"; then fail "symlink invocation copied a token"; fi
+    grep -q 'notes.txt' "$work/stderr" || fail "symlink invocation did not name the token file"
+    if grep -q "$token" "$work/stderr"; then fail "value was printed"; fi
+    status=0
+    (
+      cd "$work/bin"
+      ./sub/llm_copy --save-path "$work/bundle-rel" "$work/input/keep.txt"
+    ) >"$work/stdout" 2>"$work/stderr" || status=$?
+    [[ "$status" -eq 0 ]] || fail "relative symlink invocation failed with status $status"
+    grep -q 'hello bundle' "$work/bundle-rel" || fail "relative symlink invocation did not copy"
+    status=0
+    PATH="$work/bin:/usr/bin:/bin" llm_copy_rel --save-path "$work/bundle-path" "$work/input/keep.txt" >"$work/stdout" 2>"$work/stderr" || status=$?
+    [[ "$status" -eq 0 ]] || fail "PATH symlink invocation failed with status $status"
+    grep -q 'hello bundle' "$work/bundle-path" || fail "PATH symlink invocation did not copy"
+    ln -s "$repo_root/scripts" "$work/bin/scripts"
+    status=0
+    "$work/bin/scripts/llm_copy.sh" --save-path "$work/bundle-dir" "$work/input/keep.txt" >"$work/stdout" 2>"$work/stderr" || status=$?
+    [[ "$status" -eq 0 ]] || fail "directory symlink invocation failed with status $status"
+    grep -q 'hello bundle' "$work/bundle-dir" || fail "directory symlink invocation did not copy"
+    cp "$repo_root/scripts/llm_copy.sh" "$work/alone/llm_copy.sh"
+    chmod +x "$work/alone/llm_copy.sh"
+    ln -s "$work/alone/llm_copy.sh" "$work/bin/alone"
+    for alone in "$work/alone/llm_copy.sh" "$work/bin/alone"; do
+      status=0
+      "$alone" --save-path "$work/alone-out" "$work/input/keep.txt" >"$work/stdout" 2>"$work/stderr" || status=$?
+      [[ "$status" -eq 1 ]] || fail "copied script expected status 1, got $status"
+      grep -Fq 'see the README' "$work/stderr" || fail "copied script did not explain install"
+      if grep -Fq 'No such file' "$work/stderr"; then fail "copied script used a source error"; fi
+    done
+    ;;
   source-staged|source-push)
     init_repo
     mkdir -p "$work/repo/docs"

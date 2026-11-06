@@ -20,12 +20,15 @@ Run scripts directly from a clone of this repository.
 ./scripts/llm_git_diff.sh . --staged
 ```
 
-You can also add aliases that point to your clone.
+You can also point an alias or a symlink at a script in your clone.
+`llm_copy.sh` loads `scripts/security/token-pattern.sh` from that clone.
+Copying `llm_copy.sh` out of the clone does not work.
 Note that `multitail` below is this repo's script, not the separate
 `multitail` program; the alias hides that program if it is installed.
 
 ```bash
 alias llm="/path/to/commands/scripts/llm_copy.sh"
+ln -s /path/to/commands/scripts/llm_copy.sh ~/bin/llm_copy
 alias llm_diff="/path/to/commands/scripts/llm_git_diff.sh"
 alias clear_notebook_outputs="/path/to/commands/scripts/clear_notebook_outputs.sh"
 alias multitail="/path/to/commands/scripts/multitail.sh"

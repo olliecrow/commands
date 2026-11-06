@@ -5,6 +5,25 @@
 # Optionally use --save-path to write the bundle to a specific file path.
 set -euo pipefail
 
+die() { echo "Error: $*" >&2; exit 1; }
+
+# Follow a symlink chain to this file. Bash 3.2 and macOS have no readlink -f.
+resolve_own_dir() {
+  local path="$1"
+  local dir target guard=0
+  while [[ -L "$path" ]]; do
+    guard=$((guard + 1))
+    [[ "$guard" -le 40 ]] || return 1
+    dir="$(cd -P "$(dirname "$path")" && pwd -P)" || return 1
+    target="$(readlink "$path")" || return 1
+    case "$target" in
+      /*) path="$target" ;;
+      *) path="$dir/$target" ;;
+    esac
+  done
+  cd -P "$(dirname "$path")" && pwd -P
+}
+
 # ---------------------------
 # Constants / configuration
 # ---------------------------
@@ -12,7 +31,13 @@ readonly ALLOWED_EXTENSIONS="txt md py json jsonl yaml yml js html sh rs toml cf
 readonly ALLOWED_FILENAMES="Dockerfile Containerfile Imagefile Makefile Procfile Rakefile Gemfile Pipfile Brewfile Jenkinsfile Vagrantfile LICENSE COPYING NOTICE README CHANGES CHANGELOG VERSION"
 # Keep content patterns in sync with scripts/security/check-sensitive-text.sh.
 readonly SECRET_ASSIGNMENT_REGEX='([Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Tt][Oo][Kk][Ee][Nn]|[Pp][Aa][Ss][Ss]([Ww][Oo][Rr][Dd]|[Ww][Dd])|[Ss][Ee][Cc][Rr][Ee][Tt]([_-]?([Aa][Cc][Cc][Ee][Ss][Ss][_-]?)?[Kk][Ee][Yy])?|[Pp][Rr][Ii][Vv][Aa][Tt][Ee][_-]?[Kk][Ee][Yy])["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_./+=-]{4,}[0-9+/=][A-Za-z0-9_./+=-]{4,}(["'"'"'`,;)}[:space:]]|$)'
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+script_dir=""
+if ! script_dir="$(resolve_own_dir "${BASH_SOURCE[0]}")"; then
+  script_dir=""
+fi
+if [[ ! -f "$script_dir/security/token-pattern.sh" ]]; then
+  die "llm_copy.sh needs scripts/security/token-pattern.sh beside it. Alias or symlink scripts/llm_copy.sh inside a clone of this repository (see the README); do not copy the script alone."
+fi
 # shellcheck source=scripts/security/token-pattern.sh
 source "$script_dir/security/token-pattern.sh"
 readonly PRIVATE_KEY_REGEX='-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY-----'
@@ -25,8 +50,6 @@ ALLOW_SENSITIVE="false"
 # ---------------------------
 # Helpers
 # ---------------------------
-die() { echo "Error: $*" >&2; exit 1; }
-
 allowed_inputs_text() {
   printf 'extensions: .%s and filenames: %s' \
     "${ALLOWED_EXTENSIONS// /, .}" "${ALLOWED_FILENAMES// /, }"
