@@ -424,6 +424,35 @@ case "${1:-}" in
     blocked bash "$repo_root/scripts/security/check-sensitive-text.sh" "$work/notes.txt"
     skipped_copy bash "$repo_root/scripts/llm_copy.sh" --save-path "$work/bundle" "$work/notes.txt"
     ;;
+  source-staged|source-push)
+    init_repo
+    mkdir -p "$work/repo/docs"
+    printf 'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n' >"$work/repo/docs/a b.txt"
+    commit_files
+    base="$tip"
+    printf 'one\ntwo\n%s\nfour\nfive\nsix\nseven\neight\nnine\napi_key=%s\n' "$project" "$value" >"$work/repo/docs/a b.txt"
+    printf 'safe\n++%s\n' "$jwt" >"$work/repo/second.txt"
+    printf -v private_path '/%s/%s' home private-example
+    printf 'safe\n%s%s\n%s\n' '-----BEGIN RSA ' 'PRIVATE KEY-----' "$private_path" >"$work/repo/docs/odd"$'\t'"name.txt"
+    git -C "$work/repo" add .
+    if [[ "$1" == source-staged ]]; then
+      blocked scan_staged
+    else
+      commit_files
+      # A later clean version must not hide the earlier violation.
+      printf 'clean\n' >"$work/repo/second.txt"
+      commit_files
+      blocked scan_push --from "$base" --to "$tip"
+    fi
+    grep -Fq 'known token format in docs/a b.txt on line(s): 3' "$work/stderr" || fail "source file/line missing"
+    grep -Fq 'credential-like assignment in docs/a b.txt on line(s): 10' "$work/stderr" || fail "second hunk line missing"
+    grep -Fq 'known token format in second.txt on line(s): 2' "$work/stderr" || fail "second file line missing"
+    grep -Fq 'private key block in "docs/odd\tname.txt" on line(s): 2' "$work/stderr" || fail "quoted file missing"
+    grep -Fq 'local machine path in "docs/odd\tname.txt" on line(s): 3' "$work/stderr" || fail "path location missing"
+    for sensitive in "$project" "$value" "$jwt" "$private_path"; do
+      if grep -Fq "$sensitive" "$work/stderr"; then fail "value was printed"; fi
+    done
+    ;;
   gitleaks-paths)
     # Paths are built at run time so this file does not trip the scanners.
     users=Users

@@ -101,21 +101,15 @@ printf '%s\n' "$commit_list" |
   git --no-pager log --stdin --no-walk=unsorted --encoding=UTF-8 --no-notes \
     --format='%H%n%s%n%b%n' >>"${commit_msg_file}"
 
-# Print only "+" lines inside hunks, so an added line that itself starts
-# with "++" is kept. --no-ext-diff and --no-textconv make git print the
-# real content instead of running a diff driver from the repo config.
-# Drop NULs and bytes outside ASCII before awk. Some awk builds stop at a
-# NUL or reject non-UTF-8, which hides a secret or blocks a clean file.
+# Keep the patch so the scanner can report source file and new-file line.
+# Forced text and disabled drivers preserve the real bytes for normalization.
 printf '%s\n' "$commit_list" |
-  git --no-pager log --stdin --no-walk=unsorted --root --diff-merges=first-parent \
-    --no-renames --no-notes --format= --patch \
-    --text --no-color --unified=0 --no-ext-diff --no-textconv |
-  LC_ALL=C tr -d '\000' | LC_ALL=C tr -c '\11\12\40-\176' '?' |
-  awk '/^diff / { in_hunk = 0; next } /^@@ / { in_hunk = 1; next } in_hunk && /^\+/ { sub(/^\+/, ""); print }' \
-    >"${added_lines_file}"
+  git --no-pager -c core.quotePath=true log --stdin --no-walk=unsorted --root --diff-merges=first-parent \
+    --no-renames --no-notes --format= --patch --src-prefix=a/ --dst-prefix=b/ \
+    --text --no-color --unified=0 --no-ext-diff --no-textconv >"${added_lines_file}"
 
 bash "${script_dir}/check-sensitive-text.sh" --context=push-commit-message "${commit_msg_file}"
-bash "${script_dir}/check-sensitive-text.sh" --context=push-added-lines "${added_lines_file}"
+bash "${script_dir}/check-sensitive-text.sh" --context=push-added-lines --patch "${added_lines_file}"
 
 printf '%s\n' "$commit_list" |
   git --no-pager -c core.quotePath=false diff-tree --stdin --root -r \

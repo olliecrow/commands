@@ -4,9 +4,9 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 tmp="$(mktemp)"
 trap 'rm -f -- "$tmp"' EXIT
-# Drop NULs and bytes outside ASCII before awk. See check-push-range.sh.
-git diff --cached --text --no-ext-diff --no-textconv --no-color --unified=0 |
-  LC_ALL=C tr -d '\000' | LC_ALL=C tr -c '\11\12\40-\176' '?' |
-  awk '/^diff / { in_hunk = 0; next } /^@@ / { in_hunk = 1; next } in_hunk && /^\+/ { sub(/^\+/, ""); print }' >"$tmp"
-git -c core.quotePath=false diff --cached --name-only >>"$tmp"
-bash "$script_dir/check-sensitive-text.sh" --context=staged "$tmp"
+# The scanner keeps added-line locations from the patch before scanning.
+git -c core.quotePath=true diff --cached --no-renames --src-prefix=a/ --dst-prefix=b/ \
+  --text --no-ext-diff --no-textconv --no-color --unified=0 >"$tmp"
+bash "$script_dir/check-sensitive-text.sh" --context=staged --patch "$tmp"
+git -c core.quotePath=false diff --cached --name-only >"$tmp"
+bash "$script_dir/check-sensitive-text.sh" --context=staged-paths "$tmp"

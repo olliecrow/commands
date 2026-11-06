@@ -7,8 +7,14 @@ if [[ "${1:-}" == --context=* ]]; then
   shift
 fi
 
+patch=false
+if [[ "${1:-}" == --patch ]]; then
+  patch=true
+  shift
+fi
+
 if [[ "$#" -lt 1 ]]; then
-  echo "usage: check-sensitive-text.sh [--context=<label>] <file> [file...]" >&2
+  echo "usage: check-sensitive-text.sh [--context=<label>] [--patch] <file> [file...]" >&2
   exit 2
 fi
 
@@ -79,21 +85,39 @@ report_lines() {
   local label="$1"
   local line_numbers="$2"
   if [[ -n "$line_numbers" ]]; then
-    printf '  %s on line(s): %s\n' "$label" "$(printf '%s\n' "$line_numbers" | paste -sd, -)" >&2
+    if [[ "$patch" == true ]]; then
+      MATCH_LINES="$line_numbers" MATCH_LABEL="$label" awk -F '\t' '
+        BEGIN {
+          count = split(ENVIRON["MATCH_LINES"], lines, "\n")
+          for (i = 1; i <= count; i++) wanted[lines[i]] = 1
+        }
+        $1 in wanted {
+          printf "  %s in %s on line(s): %s\n", ENVIRON["MATCH_LABEL"], $2, $3
+        }
+      ' "$line_map" >&2
+    else
+      printf '  %s on line(s): %s\n' "$label" "$(printf '%s\n' "$line_numbers" | paste -sd, -)" >&2
+    fi
   fi
 }
 
 failed=0
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf -- "$tmp_dir"' EXIT
-scan_file="${tmp_dir}/text"
 for target in "$@"; do
   if [[ ! -f "$target" ]]; then
     echo "error: file not found: $(display_name "$target")" >&2
     exit 2
   fi
 
+  scan_file="${tmp_dir}/text"
   normalize_bytes "$target" "$scan_file"
+  if [[ "$patch" == true ]]; then
+    line_map="${tmp_dir}/locations"
+    : >"$line_map"
+    LINE_MAP="$line_map" awk -f "$script_dir/added-lines.awk" "$scan_file" >"${tmp_dir}/added"
+    scan_file="${tmp_dir}/added"
+  fi
   path_matches="$(search_disallowed_path_line_numbers "$scan_file")"
 
   secret_assignment_matches="$(search_line_numbers "$secret_assignment_regex" "$scan_file")"
@@ -101,7 +125,11 @@ for target in "$@"; do
   known_token_matches="$(search_line_numbers "$KNOWN_TOKEN_REGEX" "$scan_file")"
 
   if [[ -n "$path_matches" || -n "$secret_assignment_matches" || -n "$known_token_matches" || -n "$private_key_matches" ]]; then
-    echo "policy violation in ${context}: $(display_name "$target")" >&2
+    if [[ "$patch" == true ]]; then
+      echo "policy violation in ${context}:" >&2
+    else
+      echo "policy violation in ${context}: $(display_name "$target")" >&2
+    fi
     report_lines "local machine path" "$path_matches"
     report_lines "credential-like assignment" "$secret_assignment_matches"
     report_lines "private key block" "$private_key_matches"
