@@ -466,6 +466,27 @@ case "${1:-}" in
       if grep -Fq 'No such file' "$work/stderr"; then fail "copied script used a source error"; fi
     done
     ;;
+  token-none)
+    printf -v none_key '%s%s%s' 'sk-' 'None-' abcdefghijklmnopqrstuvwxyz0123456789
+    printf '%s\n' "$none_key" >"$work/notes.txt"
+    blocked bash "$repo_root/scripts/security/check-sensitive-text.sh" "$work/notes.txt"
+    if grep -q "$none_key" "$work/stderr"; then fail "value was printed"; fi
+    printf 'token="%s"\n' "$none_key" >"$work/quoted.txt"
+    blocked bash "$repo_root/scripts/security/check-sensitive-text.sh" "$work/quoted.txt"
+    if grep -q "$none_key" "$work/stderr"; then fail "value was printed"; fi
+    skipped_copy bash "$repo_root/scripts/llm_copy.sh" --save-path "$work/bundle" "$work/notes.txt"
+    if grep -q "$none_key" "$work/stderr"; then fail "value was printed"; fi
+    if [[ -f "$work/bundle" ]] && grep -q "$none_key" "$work/bundle"; then fail "value was copied"; fi
+    printf -v ordinary '%s%s' 'see task-None-' abcdefghijklmnopqrstuvwxyz0123456789
+    printf -v glued '%s%s%s' 'my-sk-' 'None-' abcdefghijklmnopqrstuvwxyz0123456789
+    printf '%s\n' "$ordinary" "$glued" >"$work/ordinary.txt"
+    printf '%s%s\n' 'sk-' 'None-short' >>"$work/ordinary.txt"
+    clean_text bash "$repo_root/scripts/security/check-sensitive-text.sh" "$work/ordinary.txt"
+    bash "$repo_root/scripts/llm_copy.sh" --save-path "$work/ordinary-bundle" "$work/ordinary.txt" >"$work/stdout" 2>"$work/stderr"
+    grep -q 'task-None-' "$work/ordinary-bundle" || fail "ordinary word was skipped"
+    grep -q 'my-sk-' "$work/ordinary-bundle" || fail "glued word was skipped"
+    if grep -q 'credential-like content' "$work/stderr"; then fail "ordinary word was flagged"; fi
+    ;;
   source-staged|source-push)
     init_repo
     mkdir -p "$work/repo/docs"
